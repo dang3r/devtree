@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import cytoscape, { Core, NodeSingular } from "cytoscape";
+import dagre from "cytoscape-dagre";
+
+cytoscape.use(dagre);
 import type { CytoscapeGraphData } from "@/types/device";
 import {
   convertToElements,
@@ -62,18 +65,18 @@ export default function DeviceGraph({
             label: "data(device_name)",
             "text-valign": "bottom",
             "text-halign": "center",
-            "font-size": "9px",
-            "text-margin-y": 5,
-            width: 14,
-            height: 14,
+            "font-size": "8px",
+            "text-margin-y": 8,
+            width: 12,
+            height: 12,
             "background-color": (ele: NodeSingular) =>
               getDeviceClassColor(ele.data("device_class")),
             "border-width": 0,
             "text-background-color": "#1f2937",
-            "text-background-opacity": 0.8,
+            "text-background-opacity": 0.9,
             "text-background-padding": "2px",
             color: "#9ca3af",
-            "text-max-width": "100px",
+            "text-max-width": "70px",
             "text-wrap": "ellipsis",
           },
         },
@@ -189,16 +192,17 @@ export default function DeviceGraph({
     // Apply hierarchical layout for subgraphs
     setLayoutProgress("Calculating layout...");
 
-    // Use breadthfirst layout with center node as root
-    const layoutOptions: cytoscape.LayoutOptions = {
-      name: "breadthfirst",
-      directed: true,
-      roots: centerNodeId ? `#${centerNodeId}` : undefined,
-      padding: 80,
-      spacingFactor: 2.5,
+    // Use dagre layout for better hierarchical spacing
+    const layoutOptions = {
+      name: "dagre",
+      rankDir: "TB", // Top to bottom
+      nodeSep: 80, // Horizontal separation between nodes
+      rankSep: 120, // Vertical separation between ranks
+      edgeSep: 40, // Separation between edges
+      padding: 50,
       animate: false,
-      maximal: false,
-    };
+      fit: true,
+    } as cytoscape.LayoutOptions;
 
     cy.layout(layoutOptions).run();
 
