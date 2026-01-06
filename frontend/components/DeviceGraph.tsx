@@ -275,6 +275,11 @@ export default function DeviceGraph({
       for (let year = startYear; year <= maxYear; year += yearStep) {
         markers.push(year);
       }
+      // Ensure we have a marker at or after the most recent device
+      const lastMarker = markers[markers.length - 1];
+      if (lastMarker < maxYear) {
+        markers.push(lastMarker + yearStep);
+      }
       setYearMarkers(markers);
 
       setDateRange({
@@ -321,11 +326,31 @@ export default function DeviceGraph({
       }
     });
 
-    // Track viewport changes for dynamic gridlines
+    // Track viewport changes for dynamic gridlines and font scaling
     const updateViewport = () => {
       const zoom = cy.zoom();
       const pan = cy.pan();
       setViewportTransform({ zoom, panX: pan.x, panY: pan.y });
+
+      // Scale font sizes inversely with zoom (smaller when zoomed in)
+      // Base sizes: normal=8, center=12, selected=11, search=10
+      const scaleFactor = Math.max(0.5, Math.min(2, 1 / zoom));
+      const baseFontSize = 8 * scaleFactor;
+      const centerFontSize = 12 * scaleFactor;
+      const selectedFontSize = 11 * scaleFactor;
+      const searchFontSize = 10 * scaleFactor;
+
+      // Update node styles based on zoom
+      cy.style()
+        .selector("node")
+        .style("font-size", `${baseFontSize}px`)
+        .selector("node.center-node")
+        .style("font-size", `${centerFontSize}px`)
+        .selector("node:selected")
+        .style("font-size", `${selectedFontSize}px`)
+        .selector("node.search-match")
+        .style("font-size", `${searchFontSize}px`)
+        .update();
     };
 
     cy.on("zoom pan", updateViewport);
@@ -491,11 +516,7 @@ export default function DeviceGraph({
               );
             })}
           </div>
-          {/* Time axis label */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-800/90 px-3 py-1 rounded text-xs text-gray-500 pointer-events-none z-10">
-            Time →
-          </div>
-        </>
+          </>
       )}
       <div className="absolute bottom-4 left-4 bg-gray-800/90 px-3 py-2 rounded text-xs text-gray-400">
         {graphStats.nodes.toLocaleString()} nodes · {graphStats.edges.toLocaleString()} edges

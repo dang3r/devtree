@@ -3,7 +3,8 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import type { CytoscapeGraphData, Device, CytoscapeNode } from "@/types/device";
-import { searchDevices, extractSubgraph } from "@/lib/graph-utils";
+import { searchDevices, extractSubgraph, searchCompanies, extractCompanySubgraph, getCompanyDeviceCount } from "@/lib/graph-utils";
+import type { CompanySearchResult } from "@/lib/graph-utils";
 import SearchBar from "@/components/SearchBar";
 import DevicePanel from "@/components/DevicePanel";
 
@@ -28,6 +29,9 @@ export default function Home() {
   >("none");
   const [depth, setDepth] = useState(5);
   const [viewMode, setViewMode] = useState<"graph" | "timeline">("graph");
+  const [focusedCompanyName, setFocusedCompanyName] = useState<string | null>(null);
+  const [companyDeviceLimit, setCompanyDeviceLimit] = useState(50);
+  const [companyViewMode, setCompanyViewMode] = useState<"company-only" | "with-predicates">("company-only");
 
   useEffect(() => {
     async function loadData() {
@@ -55,11 +59,25 @@ export default function Home() {
     return searchDevices(data, searchQuery, 20);
   }, [data, searchQuery]);
 
-  // Extract subgraph when a device is focused
+  // Company search results
+  const companyResults = useMemo((): CompanySearchResult[] => {
+    if (!data || searchQuery.length < 2) return [];
+    return searchCompanies(data, searchQuery, 5);
+  }, [data, searchQuery]);
+
+  // Extract subgraph when a device or company is focused
   const subgraphData = useMemo((): CytoscapeGraphData | null => {
-    if (!data || !focusedDeviceId) return null;
-    return extractSubgraph(data, focusedDeviceId, depth, depth);
-  }, [data, focusedDeviceId, depth]);
+    if (!data) return null;
+    if (focusedCompanyName) {
+      // Company view: show company's devices with optional predicates
+      const predicateDepth = companyViewMode === "with-predicates" ? depth : 0;
+      return extractCompanySubgraph(data, focusedCompanyName, companyDeviceLimit, predicateDepth);
+    }
+    if (focusedDeviceId) {
+      return extractSubgraph(data, focusedDeviceId, depth, depth);
+    }
+    return null;
+  }, [data, focusedDeviceId, focusedCompanyName, depth, companyDeviceLimit, companyViewMode]);
 
   // Get focused device info
   const focusedDevice = useMemo(() => {
@@ -75,13 +93,27 @@ export default function Home() {
     return node?.data || null;
   }, [selectedNodeId, data]);
 
+  // Get focused company device count
+  const focusedCompanyDeviceCount = useMemo(() => {
+    if (!focusedCompanyName || !data) return 0;
+    return getCompanyDeviceCount(data, focusedCompanyName);
+  }, [focusedCompanyName, data]);
+
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
   }, []);
 
   const handleDeviceSelect = useCallback((deviceId: string) => {
     setFocusedDeviceId(deviceId);
+    setFocusedCompanyName(null); // Clear company focus when selecting a device
     setSelectedNodeId(deviceId);
+    setHighlightMode("none");
+  }, []);
+
+  const handleCompanySelect = useCallback((companyName: string) => {
+    setFocusedCompanyName(companyName);
+    setFocusedDeviceId(null); // Clear device focus when selecting a company
+    setSelectedNodeId(null);
     setHighlightMode("none");
   }, []);
 
@@ -106,6 +138,7 @@ export default function Home() {
 
   const handleClearFocus = useCallback(() => {
     setFocusedDeviceId(null);
+    setFocusedCompanyName(null);
     setSelectedNodeId(null);
     setHighlightMode("none");
   }, []);
@@ -143,8 +176,10 @@ export default function Home() {
 
         <SearchBar
           searchResults={searchResults}
+          companyResults={companyResults}
           onSearchChange={handleSearchChange}
           onDeviceSelect={handleDeviceSelect}
+          onCompanySelect={handleCompanySelect}
           selectedDeviceId={focusedDeviceId}
           highlightMode={highlightMode}
           onHighlightModeChange={handleHighlightModeChange}
@@ -216,19 +251,131 @@ export default function Home() {
           </div>
         )}
 
+        {/* Company view controls */}
+        {focusedCompanyName && (
+          <div className="mt-2 p-3 bg-gray-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div>
+                  <span className="text-lg mr-2">🏢</span>
+                  <span className="text-white font-medium">{focusedCompanyName}</span>
+                  <span className="text-gray-500 ml-2 text-sm">
+                    ({focusedCompanyDeviceCount.toLocaleString()} total devices)
+                  </span>
+                </div>
+                {subgraphData && (
+                  <span className="text-gray-500 text-sm">
+                    Showing {subgraphData.metadata.total_nodes} nodes, {subgraphData.metadata.total_edges} edges
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleClearFocus}
+                className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-sm"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex items-center gap-6 mt-3 pt-3 border-t border-gray-700">
+              {/* Device limit */}
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm">Devices:</span>
+                <select
+                  value={companyDeviceLimit}
+                  onChange={(e) => setCompanyDeviceLimit(Number(e.target.value))}
+                  className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-gray-600"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
+              </div>
+
+              {/* Company-only vs with-predicates toggle */}
+              <div className="flex rounded-lg overflow-hidden border border-gray-600">
+                <button
+                  onClick={() => setCompanyViewMode("company-only")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    companyViewMode === "company-only"
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Company Only
+                </button>
+                <button
+                  onClick={() => setCompanyViewMode("with-predicates")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    companyViewMode === "with-predicates"
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  With Predicates
+                </button>
+              </div>
+
+              {/* Depth control - only show when with-predicates */}
+              {companyViewMode === "with-predicates" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-sm">Depth:</span>
+                  <button
+                    onClick={() => setDepth(Math.max(1, depth - 1))}
+                    className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-white"
+                  >
+                    -
+                  </button>
+                  <span className="text-white w-6 text-center">{depth}</span>
+                  <button
+                    onClick={() => setDepth(Math.min(10, depth + 1))}
+                    className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-white"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+
+              {/* Graph/Timeline toggle */}
+              <div className="flex rounded-lg overflow-hidden border border-gray-600">
+                <button
+                  onClick={() => setViewMode("graph")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    viewMode === "graph"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Graph
+                </button>
+                <button
+                  onClick={() => setViewMode("timeline")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    viewMode === "timeline"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Timeline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-4 mt-4">
           <div className="flex-1 h-[calc(100vh-280px)]">
-            {!focusedDeviceId ? (
+            {!focusedDeviceId && !focusedCompanyName ? (
               // Empty state - prompt user to search
               <div className="w-full h-full bg-gray-900 rounded-lg flex items-center justify-center">
                 <div className="text-center max-w-md">
                   <div className="text-6xl mb-4">🔍</div>
                   <h2 className="text-xl font-semibold text-white mb-2">
-                    Search for a Device
+                    Search for a Device or Company
                   </h2>
                   <p className="text-gray-400 mb-4">
                     Enter a device name, 510(k) number, or manufacturer in the search bar above
-                    to explore its predicate relationships.
+                    to explore predicate relationships.
                   </p>
                   {data && !isLoading && (
                     <p className="text-gray-500 text-sm">

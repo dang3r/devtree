@@ -308,3 +308,134 @@ export function searchDevices(
 
   return results.slice(0, maxResults).map(r => r.node);
 }
+
+/**
+ * Company search result with device count
+ */
+export interface CompanySearchResult {
+  name: string;
+  deviceCount: number;
+}
+
+/**
+ * Search for companies (applicants) by name.
+ * Returns unique company names with device counts.
+ */
+export function searchCompanies(
+  data: CytoscapeGraphData,
+  query: string,
+  maxResults: number = 5
+): CompanySearchResult[] {
+  if (!query || query.trim().length < 2) return [];
+
+  const q = query.toLowerCase().trim();
+  const companyCounts = new Map<string, number>();
+
+  // Count devices per company
+  for (const node of data.elements.nodes) {
+    const applicant = node.data.applicant || "";
+    if (applicant.toLowerCase().includes(q)) {
+      companyCounts.set(applicant, (companyCounts.get(applicant) || 0) + 1);
+    }
+  }
+
+  // Convert to array and sort by device count (descending)
+  const results: CompanySearchResult[] = Array.from(companyCounts.entries())
+    .map(([name, deviceCount]) => ({ name, deviceCount }))
+    .sort((a, b) => b.deviceCount - a.deviceCount);
+
+  return results.slice(0, maxResults);
+}
+
+/**
+ * Extract a subgraph for a company's devices.
+ * Returns the company's devices (limited by maxDevices) plus their depth-1 predicates.
+ */
+export function extractCompanySubgraph(
+  data: CytoscapeGraphData,
+  companyName: string,
+  maxDevices: number = 50,
+  predicateDepth: number = 1
+): CytoscapeGraphData {
+  // Build adjacency maps
+  const nodeMap = new Map<string, CytoscapeNode>();
+  const parentsOf = new Map<string, string[]>();
+
+  for (const node of data.elements.nodes) {
+    nodeMap.set(node.data.id, node);
+    parentsOf.set(node.data.id, []);
+  }
+
+  for (const edge of data.elements.edges) {
+    const parents = parentsOf.get(edge.data.target);
+    if (parents) parents.push(edge.data.source);
+  }
+
+  // Find all devices from this company, sorted by decision_date (most recent first)
+  const companyDevices = data.elements.nodes
+    .filter(node => node.data.applicant === companyName)
+    .sort((a, b) => {
+      const dateA = parseDateToTimestamp(a.data.decision_date) || 0;
+      const dateB = parseDateToTimestamp(b.data.decision_date) || 0;
+      return dateB - dateA; // Most recent first
+    })
+    .slice(0, maxDevices);
+
+  // Collect node IDs
+  const includedNodes = new Set<string>();
+
+  // Add company's devices
+  for (const device of companyDevices) {
+    includedNodes.add(device.data.id);
+  }
+
+  // Add predicates up to specified depth
+  let frontier = companyDevices.map(d => d.data.id);
+  for (let depth = 0; depth < predicateDepth && frontier.length > 0; depth++) {
+    const nextFrontier: string[] = [];
+    for (const nodeId of frontier) {
+      const parents = parentsOf.get(nodeId) || [];
+      for (const parentId of parents) {
+        if (!includedNodes.has(parentId)) {
+          includedNodes.add(parentId);
+          nextFrontier.push(parentId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  // Collect nodes
+  const nodes: CytoscapeNode[] = [];
+  for (const nodeId of includedNodes) {
+    const node = nodeMap.get(nodeId);
+    if (node) nodes.push(node);
+  }
+
+  // Collect edges between included nodes
+  const edges: CytoscapeEdge[] = [];
+  for (const edge of data.elements.edges) {
+    if (includedNodes.has(edge.data.source) && includedNodes.has(edge.data.target)) {
+      edges.push(edge);
+    }
+  }
+
+  return {
+    metadata: {
+      ...data.metadata,
+      total_nodes: nodes.length,
+      total_edges: edges.length,
+    },
+    elements: { nodes, edges }
+  };
+}
+
+/**
+ * Get total device count for a company
+ */
+export function getCompanyDeviceCount(
+  data: CytoscapeGraphData,
+  companyName: string
+): number {
+  return data.elements.nodes.filter(node => node.data.applicant === companyName).length;
+}

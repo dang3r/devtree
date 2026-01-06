@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { CytoscapeNode } from "@/types/device";
+import type { CompanySearchResult } from "@/lib/graph-utils";
 
 interface SearchBarProps {
   searchResults: CytoscapeNode[];
+  companyResults: CompanySearchResult[];
   onSearchChange: (query: string) => void;
   onDeviceSelect: (deviceId: string) => void;
+  onCompanySelect: (companyName: string) => void;
   selectedDeviceId: string | null;
   highlightMode: "none" | "ancestors" | "descendants";
   onHighlightModeChange: (mode: "none" | "ancestors" | "descendants") => void;
@@ -15,8 +18,10 @@ interface SearchBarProps {
 
 export default function SearchBar({
   searchResults,
+  companyResults,
   onSearchChange,
   onDeviceSelect,
+  onCompanySelect,
   selectedDeviceId,
   highlightMode,
   onHighlightModeChange,
@@ -53,6 +58,14 @@ export default function SearchBar({
     setQuery("");
   };
 
+  const handleCompanyClick = (companyName: string) => {
+    onCompanySelect(companyName);
+    setShowDropdown(false);
+    setQuery("");
+  };
+
+  const hasResults = searchResults.length > 0 || companyResults.length > 0;
+
   const getClassBadge = (deviceClass: string) => {
     const colors: Record<string, string> = {
       "1": "bg-green-600",
@@ -82,36 +95,69 @@ export default function SearchBar({
         {/* Search Results Dropdown */}
         {showDropdown && (
           <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg max-h-96 overflow-y-auto">
-            {searchResults.length === 0 ? (
+            {!hasResults ? (
               <div className="px-4 py-3 text-gray-400 text-sm">
-                No devices found matching "{query}"
+                No results found matching "{query}"
               </div>
             ) : (
               <>
-                <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
-                  {searchResults.length} result{searchResults.length !== 1 ? "s" : ""} - click to explore
-                </div>
-                {searchResults.map((node) => (
-                  <button
-                    key={node.data.id}
-                    onClick={() => handleDeviceClick(node.data.id)}
-                    className="w-full px-4 py-3 text-left hover:bg-gray-700 border-b border-gray-700 last:border-b-0 transition-colors"
-                  >
-                    <div className="flex items-start gap-2">
-                      {getClassBadge(node.data.device_class)}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-white truncate">
-                          {node.data.device_name}
-                        </div>
-                        <div className="text-sm text-gray-400 flex items-center gap-2">
-                          <span className="font-mono">{node.data.id}</span>
-                          <span className="text-gray-600">•</span>
-                          <span className="truncate">{node.data.applicant}</span>
-                        </div>
-                      </div>
+                {/* Company Results */}
+                {companyResults.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
+                      Companies
                     </div>
-                  </button>
-                ))}
+                    {companyResults.map((company) => (
+                      <button
+                        key={company.name}
+                        onClick={() => handleCompanyClick(company.name)}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-700 border-b border-gray-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">🏢</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-white truncate">
+                              {company.name}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              {company.deviceCount.toLocaleString()} device{company.deviceCount !== 1 ? "s" : ""}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* Device Results */}
+                {searchResults.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
+                      Devices ({searchResults.length} result{searchResults.length !== 1 ? "s" : ""})
+                    </div>
+                    {searchResults.map((node) => (
+                      <button
+                        key={node.data.id}
+                        onClick={() => handleDeviceClick(node.data.id)}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-700 border-b border-gray-700 last:border-b-0 transition-colors"
+                      >
+                        <div className="flex items-start gap-2">
+                          {getClassBadge(node.data.device_class)}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-white truncate">
+                              {node.data.device_name}
+                            </div>
+                            <div className="text-sm text-gray-400 flex items-center gap-2">
+                              <span className="font-mono">{node.data.id}</span>
+                              <span className="text-gray-600">•</span>
+                              <span className="truncate">{node.data.applicant}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </div>
