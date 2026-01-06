@@ -207,9 +207,67 @@ export function extractSubgraph(
 }
 
 /**
- * Search devices by name, ID, or applicant.
- * Returns top N matches sorted by relevance.
+ * Calculate depth (distance from root) for all nodes in a Cytoscape graph.
+ * Root nodes (no incoming edges) have depth 0.
+ * Returns a Map of nodeId -> depth.
  */
+export function calculateNodeDepths(cy: cytoscape.Core): Map<string, number> {
+  const depths = new Map<string, number>();
+  const roots = cy.nodes().filter((node) => node.incomers("edge").length === 0);
+
+  // BFS from all roots
+  roots.forEach((root) => {
+    depths.set(root.id(), 0);
+  });
+
+  let frontier = roots;
+  let currentDepth = 0;
+
+  while (frontier.nonempty()) {
+    currentDepth++;
+    const nextFrontier = cy.collection();
+
+    frontier.forEach((node) => {
+      node.outgoers("node").forEach((child) => {
+        if (!depths.has(child.id())) {
+          depths.set(child.id(), currentDepth);
+          nextFrontier.merge(child);
+        }
+      });
+    });
+
+    frontier = nextFrontier;
+  }
+
+  return depths;
+}
+
+/**
+ * Parse a date string (MM/DD/YYYY or YYYY-MM-DD format) to timestamp.
+ * Returns null if parsing fails.
+ */
+export function parseDateToTimestamp(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+
+  // Try parsing common formats
+  const date = new Date(dateStr);
+  if (!isNaN(date.getTime())) {
+    return date.getTime();
+  }
+
+  // Try MM/DD/YYYY format
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const [month, day, year] = parts.map(Number);
+    const parsed = new Date(year, month - 1, day);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.getTime();
+    }
+  }
+
+  return null;
+}
+
 export function searchDevices(
   data: CytoscapeGraphData,
   query: string,

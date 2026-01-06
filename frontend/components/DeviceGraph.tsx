@@ -11,6 +11,8 @@ import {
   getDeviceClassColor,
   findPathToRoot,
   findDescendants,
+  calculateNodeDepths,
+  parseDateToTimestamp,
 } from "@/lib/graph-utils";
 
 interface DeviceGraphProps {
@@ -21,6 +23,7 @@ interface DeviceGraphProps {
   selectedNodeId: string | null;
   isLoading: boolean;
   centerNodeId?: string | null;
+  viewMode?: "graph" | "timeline";
 }
 
 export default function DeviceGraph({
@@ -31,11 +34,16 @@ export default function DeviceGraph({
   selectedNodeId,
   isLoading,
   centerNodeId,
+  viewMode = "graph",
 }: DeviceGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0 });
   const [layoutProgress, setLayoutProgress] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<{ min: Date; max: Date } | null>(null);
+  const [yearMarkers, setYearMarkers] = useState<number[]>([]);
+  const [viewportTransform, setViewportTransform] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const timelineMetaRef = useRef<{ minTime: number; maxTime: number; graphPadding: number } | null>(null);
 
   const initGraph = useCallback(() => {
     if (!containerRef.current || !data) return;
@@ -189,22 +197,107 @@ export default function DeviceGraph({
       pixelRatio: 1,
     });
 
-    // Apply hierarchical layout for subgraphs
+    // Apply layout based on view mode
     setLayoutProgress("Calculating layout...");
 
-    // Use dagre layout for better hierarchical spacing
-    const layoutOptions = {
-      name: "dagre",
-      rankDir: "TB", // Top to bottom
-      nodeSep: 80, // Horizontal separation between nodes
-      rankSep: 120, // Vertical separation between ranks
-      edgeSep: 40, // Separation between edges
-      padding: 50,
-      animate: false,
-      fit: true,
-    } as cytoscape.LayoutOptions;
+    if (viewMode === "timeline") {
+      // Timeline layout: X = date, Y = depth
+      const depths = calculateNodeDepths(cy);
 
-    cy.layout(layoutOptions).run();
+      // Gather date range
+      let minDate = Infinity;
+      let maxDate = -Infinity;
+      const nodeDates = new Map<string, number>();
+
+      cy.nodes().forEach((node) => {
+        const dateStr = node.data("decision_date");
+        const timestamp = parseDateToTimestamp(dateStr);
+        if (timestamp !== null) {
+          nodeDates.set(node.id(), timestamp);
+          minDate = Math.min(minDate, timestamp);
+          maxDate = Math.max(maxDate, timestamp);
+        }
+      });
+
+      // Fallback if no valid dates
+      if (minDate === Infinity) {
+        minDate = 0;
+        maxDate = 1;
+      }
+
+      // Add some padding to date range
+      const dateRange = maxDate - minDate || 1;
+      const padding = dateRange * 0.05;
+      minDate -= padding;
+      maxDate += padding;
+
+      // Calculate layout dimensions
+      const containerWidth = containerRef.current?.clientWidth || 1000;
+      const containerHeight = containerRef.current?.clientHeight || 600;
+      const graphPadding = 80;
+      const rowHeight = 100;
+      const maxDepth = Math.max(...Array.from(depths.values()), 0);
+
+      // Position nodes
+      cy.nodes().forEach((node) => {
+        const nodeDate = nodeDates.get(node.id());
+        const depth = depths.get(node.id()) ?? 0;
+
+        // X position based on date
+        let x: number;
+        if (nodeDate !== undefined) {
+          x = graphPadding + ((nodeDate - minDate) / (maxDate - minDate)) * (containerWidth - 2 * graphPadding);
+        } else {
+          // Fallback for nodes without dates - position based on depth
+          x = graphPadding + (depth / (maxDepth + 1)) * (containerWidth - 2 * graphPadding);
+        }
+
+        // Y position based on depth
+        const y = graphPadding + depth * rowHeight;
+
+        node.position({ x, y });
+      });
+
+      cy.fit(undefined, 50);
+
+      // Store timeline metadata for dynamic gridlines
+      timelineMetaRef.current = { minTime: minDate, maxTime: maxDate, graphPadding };
+
+      // Store date range for axis display
+      const minYear = new Date(minDate).getFullYear();
+      const maxYear = new Date(maxDate).getFullYear();
+
+      // Generate year markers (every 5 years for cleaner display, or every year if range is small)
+      const yearRange = maxYear - minYear;
+      const yearStep = yearRange > 20 ? 5 : yearRange > 10 ? 2 : 1;
+      const markers: number[] = [];
+      const startYear = Math.ceil(minYear / yearStep) * yearStep;
+      for (let year = startYear; year <= maxYear; year += yearStep) {
+        markers.push(year);
+      }
+      setYearMarkers(markers);
+
+      setDateRange({
+        min: new Date(minDate),
+        max: new Date(maxDate),
+      });
+    } else {
+      setDateRange(null);
+      setYearMarkers([]);
+      // Use dagre layout for better hierarchical spacing
+      const layoutOptions = {
+        name: "dagre",
+        rankDir: "TB", // Top to bottom
+        nodeSep: 80, // Horizontal separation between nodes
+        rankSep: 120, // Vertical separation between ranks
+        edgeSep: 40, // Separation between edges
+        padding: 50,
+        animate: false,
+        fit: true,
+      } as cytoscape.LayoutOptions;
+
+      cy.layout(layoutOptions).run();
+    }
 
     // Mark center node
     if (centerNodeId) {
@@ -228,8 +321,18 @@ export default function DeviceGraph({
       }
     });
 
+    // Track viewport changes for dynamic gridlines
+    const updateViewport = () => {
+      const zoom = cy.zoom();
+      const pan = cy.pan();
+      setViewportTransform({ zoom, panX: pan.x, panY: pan.y });
+    };
+
+    cy.on("zoom pan", updateViewport);
+    updateViewport(); // Initial state
+
     cyRef.current = cy;
-  }, [data, centerNodeId, onNodeSelect]);
+  }, [data, centerNodeId, onNodeSelect, viewMode]);
 
   useEffect(() => {
     initGraph();
@@ -350,8 +453,53 @@ export default function DeviceGraph({
           </div>
         </div>
       )}
+      {/* Timeline axis display with year markers and gridlines */}
+      {viewMode === "timeline" && dateRange && timelineMetaRef.current && (
+        <>
+          {/* Year markers and vertical gridlines */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {yearMarkers.map((year) => {
+              const meta = timelineMetaRef.current!;
+              const containerWidth = containerRef.current?.clientWidth || 1000;
+
+              // Calculate the graph X position for this year (same formula as layout)
+              const yearTime = new Date(year, 0, 1).getTime();
+              const graphX = meta.graphPadding + ((yearTime - meta.minTime) / (meta.maxTime - meta.minTime)) * (containerWidth - 2 * meta.graphPadding);
+
+              // Transform to screen coordinates using viewport
+              const screenX = graphX * viewportTransform.zoom + viewportTransform.panX;
+
+              // Skip if outside visible range
+              if (screenX < -50 || screenX > containerWidth + 50) return null;
+
+              return (
+                <div
+                  key={year}
+                  className="absolute top-0 bottom-0 flex flex-col items-center"
+                  style={{ left: `${screenX}px` }}
+                >
+                  {/* Dotted vertical line */}
+                  <div
+                    className="flex-1 border-l border-dashed border-gray-600/40"
+                    style={{ marginTop: '40px' }}
+                  />
+                  {/* Year label at top */}
+                  <div className="absolute top-2 -translate-x-1/2 bg-gray-800/95 px-2 py-1 rounded text-xs text-gray-400 whitespace-nowrap">
+                    {year}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Time axis label */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-800/90 px-3 py-1 rounded text-xs text-gray-500 pointer-events-none z-10">
+            Time →
+          </div>
+        </>
+      )}
       <div className="absolute bottom-4 left-4 bg-gray-800/90 px-3 py-2 rounded text-xs text-gray-400">
         {graphStats.nodes.toLocaleString()} nodes · {graphStats.edges.toLocaleString()} edges
+        {viewMode === "timeline" && " · Timeline view"}
       </div>
       <div className="absolute bottom-4 right-4 bg-gray-800/90 px-3 py-2 rounded text-xs text-gray-400">
         Scroll to zoom · Drag to pan · Click node for details

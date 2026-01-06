@@ -27,6 +27,7 @@ export default function Home() {
     "none" | "ancestors" | "descendants"
   >("none");
   const [depth, setDepth] = useState(5);
+  const [viewMode, setViewMode] = useState<"graph" | "timeline">("graph");
 
   useEffect(() => {
     async function loadData() {
@@ -166,6 +167,29 @@ export default function Home() {
               )}
             </div>
             <div className="flex items-center gap-4">
+              {/* View mode toggle */}
+              <div className="flex rounded-lg overflow-hidden border border-gray-600">
+                <button
+                  onClick={() => setViewMode("graph")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    viewMode === "graph"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Graph
+                </button>
+                <button
+                  onClick={() => setViewMode("timeline")}
+                  className={`px-3 py-1 text-sm transition-colors ${
+                    viewMode === "timeline"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Timeline
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm">Depth:</span>
                 <button
@@ -228,6 +252,7 @@ export default function Home() {
                 selectedNodeId={selectedNodeId}
                 isLoading={isLoading}
                 centerNodeId={focusedDeviceId}
+                viewMode={viewMode}
               />
             )}
           </div>
