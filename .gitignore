@@ -13,3 +13,5 @@ wheels/
 *.zip
 *.json
 pdfs/
+node_modules
+.next

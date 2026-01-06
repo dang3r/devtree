@@ -20,4 +20,11 @@ Building a graph of FDA medical device predicate relationships from 510(k) clear
 - You can download the 510k data from https://open.fda.gov/data/downloads/ / https://download.open.fda.gov/device/510k/device-510k-0001-of-0001.json.zip
 - This contains metadata about all 510k devices.
 - It looks like each file has a URL like `https://www.accessdata.fda.gov/cdrh_docs/pdf15/K152289.pdf` that defines the summary of the device. Using the year or prefix of the 510k number, we can get the PDF.
-- 
+
+## extracting predicates from the pdfs
+
+
+## ideas
+
+- make a leaderboard of people who have submitted with the most devices
+- make an interface that lets people ask a query and get an answer
