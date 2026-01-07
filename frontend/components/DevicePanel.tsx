@@ -21,6 +21,27 @@ function getDeviceClassBadgeColor(deviceClass: string): string {
   }
 }
 
+function getPdfUrl(kNumber: string, date: string): string {
+  if (kNumber.startsWith("DEN")) {
+    return `https://www.accessdata.fda.gov/cdrh_docs/reviews/${kNumber}.pdf`;
+  }
+
+
+  // If the Knumber is < K02*, it uses the old format
+  const year_prefix = parseInt(kNumber.slice(1, 3), 10);
+  if (year_prefix < 2 || year_prefix > 30) {
+    return `https://www.accessdata.fda.gov/cdrh_docs/pdf/${kNumber}.pdf`;
+  }
+  return `https://www.accessdata.fda.gov/cdrh_docs/pdf${year_prefix}/${kNumber}.pdf`;
+}
+
+function getDatabaseUrl(kNumber: string): string {
+  if (kNumber.startsWith("DEN")) {
+    return `https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpmn/denovo.cfm?id=${kNumber}`;
+  }
+  return `https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpmn/pmn.cfm?ID=${kNumber}`;
+}
+
 export default function DevicePanel({ device, onClose }: DevicePanelProps) {
   if (!device) {
     return (
@@ -153,6 +174,31 @@ export default function DevicePanel({ device, onClose }: DevicePanelProps) {
           <p className="text-white">
             {device.state}, {device.country_code}
           </p>
+        </div>
+
+        <div className="pt-3 mt-3 border-t border-gray-700 space-y-2">
+          <a
+            href={getDatabaseUrl(device.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            View on FDA Database
+          </a>
+          <a
+            href={getPdfUrl(device.id, device.decision_date)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            View Summary PDF
+          </a>
         </div>
       </div>
     </div>

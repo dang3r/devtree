@@ -106,13 +106,42 @@ def load_contacts(path: Path) -> dict[str, str]:
     return contacts
 
 
-def extract_device_node(device: dict[str, Any], contact: str | None = None) -> DeviceNode:
+def load_company_mappings(path: Path) -> dict[str, str]:
+    """Load company name mappings and build reverse lookup."""
+    if not path.exists():
+        print(f"  No company mappings found at {path}")
+        return {}
+
+    print(f"Loading company mappings from {path}...")
+    with open(path) as f:
+        mappings = json.load(f)
+
+    # Build reverse lookup: original_name -> canonical_name
+    reverse = {}
+    for canonical, variants in mappings.items():
+        for variant in variants:
+            reverse[variant] = canonical
+
+    print(f"  Loaded {len(mappings):,} canonical names, {len(reverse):,} mappings")
+    return reverse
+
+
+def extract_device_node(
+    device: dict[str, Any],
+    contact: str | None = None,
+    company_mappings: dict[str, str] | None = None,
+) -> DeviceNode:
     """Extract relevant fields from FDA device data."""
     openfda = device.get("openfda", {})
 
+    # Normalize applicant name if mapping exists
+    applicant = device.get("applicant", "Unknown")
+    if company_mappings and applicant in company_mappings:
+        applicant = company_mappings[applicant]
+
     return DeviceNode(
         device_name=device.get("device_name", "Unknown"),
-        applicant=device.get("applicant", "Unknown"),
+        applicant=applicant,
         contact=contact,
         decision_date=device.get("decision_date"),
         device_class=openfda.get("device_class"),
@@ -132,6 +161,7 @@ def build_graph(
     fda_devices: dict[str, dict[str, Any]],
     predicates: dict[str, list[str]],
     contacts: dict[str, str],
+    company_mappings: dict[str, str] | None = None,
 ) -> DeviceGraph:
     """Build the complete device graph."""
     print("Building graph...")
@@ -143,7 +173,7 @@ def build_graph(
     # Build nodes from FDA data
     for k_num, device in fda_devices.items():
         contact = contacts.get(k_num)
-        nodes[k_num] = extract_device_node(device, contact)
+        nodes[k_num] = extract_device_node(device, contact, company_mappings)
 
     # Build edges from predicates
     for source, targets in predicates.items():
@@ -211,9 +241,10 @@ def main() -> None:
     fda_devices = load_fda_data(data_path / "device-510k-0001-of-0001.json")
     predicates = load_predicates(data_path / "predicates.json")
     contacts = load_contacts(data_path / "pmn96cur.txt")
+    company_mappings = load_company_mappings(data_path / "company_mappings.json")
 
     # Build graph
-    graph = build_graph(fda_devices, predicates, contacts)
+    graph = build_graph(fda_devices, predicates, contacts, company_mappings)
 
     # Output stats
     print()

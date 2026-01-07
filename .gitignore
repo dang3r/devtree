@@ -15,3 +15,5 @@ wheels/
 pdfs/
 node_modules
 .next
+text
+pdfs

@@ -305,7 +305,10 @@ export default function Home() {
                   Company Only
                 </button>
                 <button
-                  onClick={() => setCompanyViewMode("with-predicates")}
+                  onClick={() => {
+                    setCompanyViewMode("with-predicates");
+                    setDepth(0);
+                  }}
                   className={`px-3 py-1 text-sm transition-colors ${
                     companyViewMode === "with-predicates"
                       ? "bg-green-600 text-white"
@@ -321,7 +324,7 @@ export default function Home() {
                 <div className="flex items-center gap-2">
                   <span className="text-gray-400 text-sm">Depth:</span>
                   <button
-                    onClick={() => setDepth(Math.max(1, depth - 1))}
+                    onClick={() => setDepth(Math.max(0, depth - 1))}
                     className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-white"
                   >
                     -

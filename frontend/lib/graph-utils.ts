@@ -349,26 +349,31 @@ export function searchCompanies(
 
 /**
  * Extract a subgraph for a company's devices.
- * Returns the company's devices (limited by maxDevices) plus their depth-1 predicates.
+ * Returns the company's devices (limited by maxDevices) plus ancestors and descendants up to specified depth.
  */
 export function extractCompanySubgraph(
   data: CytoscapeGraphData,
   companyName: string,
   maxDevices: number = 50,
-  predicateDepth: number = 1
+  relationDepth: number = 1
 ): CytoscapeGraphData {
   // Build adjacency maps
   const nodeMap = new Map<string, CytoscapeNode>();
-  const parentsOf = new Map<string, string[]>();
+  const parentsOf = new Map<string, string[]>(); // node -> its predicates (incoming)
+  const childrenOf = new Map<string, string[]>(); // node -> devices using it (outgoing)
 
   for (const node of data.elements.nodes) {
     nodeMap.set(node.data.id, node);
     parentsOf.set(node.data.id, []);
+    childrenOf.set(node.data.id, []);
   }
 
   for (const edge of data.elements.edges) {
+    // edge: source -> target means source is predicate of target
     const parents = parentsOf.get(edge.data.target);
     if (parents) parents.push(edge.data.source);
+    const children = childrenOf.get(edge.data.source);
+    if (children) children.push(edge.data.target);
   }
 
   // Find all devices from this company, sorted by decision_date (most recent first)
@@ -389,9 +394,9 @@ export function extractCompanySubgraph(
     includedNodes.add(device.data.id);
   }
 
-  // Add predicates up to specified depth
+  // Add ancestors (predicates) up to specified depth
   let frontier = companyDevices.map(d => d.data.id);
-  for (let depth = 0; depth < predicateDepth && frontier.length > 0; depth++) {
+  for (let d = 0; d < relationDepth && frontier.length > 0; d++) {
     const nextFrontier: string[] = [];
     for (const nodeId of frontier) {
       const parents = parentsOf.get(nodeId) || [];
@@ -399,6 +404,22 @@ export function extractCompanySubgraph(
         if (!includedNodes.has(parentId)) {
           includedNodes.add(parentId);
           nextFrontier.push(parentId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  // Add descendants up to specified depth
+  frontier = companyDevices.map(d => d.data.id);
+  for (let d = 0; d < relationDepth && frontier.length > 0; d++) {
+    const nextFrontier: string[] = [];
+    for (const nodeId of frontier) {
+      const children = childrenOf.get(nodeId) || [];
+      for (const childId of children) {
+        if (!includedNodes.has(childId)) {
+          includedNodes.add(childId);
+          nextFrontier.push(childId);
         }
       }
     }

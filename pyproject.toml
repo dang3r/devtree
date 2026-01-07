@@ -1,12 +1,11 @@
 [project]
 name = "devtree"
 version = "0.1.0"
-description = "Add your description here"
+description = ""
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "httpx",
-    "pandas>=2.3.3",
     "pillow",
     "pydantic",
     "pymupdf>=1.26.7",
