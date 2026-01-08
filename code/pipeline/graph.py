@@ -22,14 +22,11 @@ class DeviceNode(BaseModel):
     decision_date: str | None = None
     device_class: str | None = None
     product_code: str | None = None
-    advisory_committee: str | None = None
     specialty: str | None = None
     date_received: str | None = None
-    decision_description: str | None = None
-    clearance_type: str | None = None
+    # decision_description: str | None = None
     country_code: str | None = None
     state: str | None = None
-    regulation_number: str | None = None
 
 
 class Edge(BaseModel):
@@ -160,14 +157,14 @@ def extract_device_node(
         decision_date=device.get("decision_date"),
         device_class=openfda.get("device_class"),
         product_code=device.get("product_code"),
-        advisory_committee=device.get("advisory_committee"),
+        # advisory_committee=device.get("advisory_committee"),
         specialty=device.get("advisory_committee_description"),
         date_received=device.get("date_received"),
-        decision_description=device.get("decision_description"),
-        clearance_type=device.get("clearance_type"),
+        # decision_description=device.get("decision_description"),
+        # clearance_type=device.get("clearance_type"),
         country_code=device.get("country_code"),
         state=device.get("state"),
-        regulation_number=openfda.get("regulation_number"),
+        # regulation_number=openfda.get("regulation_number"),
     )
 
 
@@ -195,7 +192,9 @@ def build_graph(
     else:
         predicates = load_predicates(predicates_path)
     contacts = load_contacts(contacts_path) if contacts_path else {}
-    company_mappings = load_company_mappings(company_mappings_path) if company_mappings_path else {}
+    company_mappings = (
+        load_company_mappings(company_mappings_path) if company_mappings_path else {}
+    )
 
     print("Building graph...")
 
@@ -245,7 +244,22 @@ def export_cytoscape(graph: DeviceGraph, output_path: Path) -> None:
     node_ids = set(graph.nodes.keys())
 
     # Filter edges to only valid ones
-    valid_edges = [e for e in graph.edges if e.source in node_ids and e.target in node_ids]
+    valid_edges = [
+        e for e in graph.edges if e.source in node_ids and e.target in node_ids
+    ]
+
+    # save bad edges to a file
+    bad_edges_path = Path("bad_edges.json")
+    with open(bad_edges_path, "w") as f:
+        json.dump(
+            [
+                e.model_dump()
+                for e in graph.edges
+                if e.source not in node_ids or e.target not in node_ids
+            ],
+            f,
+            indent=2,
+        )
     skipped = len(graph.edges) - len(valid_edges)
     if skipped > 0:
         print(f"  Skipped {skipped:,} edges with missing nodes")
@@ -276,3 +290,21 @@ def export_cytoscape(graph: DeviceGraph, output_path: Path) -> None:
         json.dump(cytoscape, f, indent=2)
     size_mb = output_path.stat().st_size / (1024 * 1024)
     print(f"  Size: {size_mb:.1f} MB")
+
+
+def main():
+    from lib import FDA_JSON_PATH, DB_PATH, CONTACTS_PATH, GRAPH_PATH, CYTOSCAPE_PATH
+
+    graph = build_graph(
+        FDA_JSON_PATH,
+        DB_PATH,  # Use db.json instead of predicates.json
+        CONTACTS_PATH,
+        None,
+        use_db_format=True,
+    )
+    export_graph(graph, GRAPH_PATH)
+    export_cytoscape(graph, CYTOSCAPE_PATH)
+
+
+if __name__ == "__main__":
+    main()

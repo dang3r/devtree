@@ -15,6 +15,9 @@ import {
   parseDateToTimestamp,
 } from "@/lib/graph-utils";
 
+// BasePath for GitHub Pages deployment
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 interface DeviceGraphProps {
   data: CytoscapeGraphData | null;
   searchQuery: string;
@@ -70,39 +73,35 @@ export default function DeviceGraph({
         {
           selector: "node",
           style: {
-            label: "data(device_name)",
-            "text-valign": "bottom",
+            label: (ele: NodeSingular) => `${ele.data("label")}\n${ele.data("sublabel") || ""}`,
+            "text-valign": "center",
             "text-halign": "center",
-            "font-size": "8px",
-            "text-margin-y": 8,
-            width: 12,
-            height: 12,
-            "background-color": (ele: NodeSingular) =>
+            "font-size": "10px",
+            width: 100,
+            height: 50,
+            shape: "round-rectangle",
+            "background-color": "#1e293b",
+            "border-width": 3,
+            "border-color": (ele: NodeSingular) =>
               getDeviceClassColor(ele.data("device_class")),
-            "border-width": 0,
-            "text-background-color": "#1f2937",
-            "text-background-opacity": 0.9,
-            "text-background-padding": "2px",
-            color: "#9ca3af",
-            "text-max-width": "70px",
-            "text-wrap": "ellipsis",
+            color: "#f1f5f9",
+            "text-wrap": "wrap",
+            "text-max-width": "90px",
+            "font-weight": "normal",
           },
         },
         {
           selector: "node.center-node",
           style: {
-            label: "data(device_name)",
-            "text-valign": "bottom",
+            label: (ele: NodeSingular) => `${ele.data("label")}\n${ele.data("sublabel") || ""}`,
+            "text-valign": "center",
             "text-halign": "center",
             "font-size": "12px",
-            "text-margin-y": 8,
             "border-width": 4,
             "border-color": "#3b82f6",
-            width: 30,
-            height: 30,
-            "text-background-color": "#1f2937",
-            "text-background-opacity": 0.95,
-            "text-background-padding": "4px",
+            "background-color": "#1e3a5f",
+            width: 120,
+            height: 60,
             color: "#fff",
             "font-weight": "bold",
             "z-index": 999,
@@ -111,46 +110,41 @@ export default function DeviceGraph({
         {
           selector: "node:selected",
           style: {
-            label: "data(device_name)",
-            "text-valign": "bottom",
+            label: (ele: NodeSingular) => `${ele.data("label")}\n${ele.data("sublabel") || ""}`,
+            "text-valign": "center",
             "text-halign": "center",
             "font-size": "11px",
-            "text-margin-y": 6,
             "border-width": 3,
             "border-color": "#10b981",
-            width: 24,
-            height: 24,
-            "text-background-color": "#1f2937",
-            "text-background-opacity": 0.9,
-            "text-background-padding": "3px",
+            "background-color": "#134e4a",
+            width: 110,
+            height: 55,
             color: "#fff",
           },
         },
         {
           selector: "node.highlighted",
           style: {
-            "border-width": 2,
+            "border-width": 3,
             "border-color": "#8b5cf6",
-            width: 18,
-            height: 18,
-            color: "#c4b5fd",
+            "background-color": "#2e1065",
+            width: 105,
+            height: 52,
+            color: "#e9d5ff",
           },
         },
         {
           selector: "node.search-match",
           style: {
-            label: "data(device_name)",
-            "text-valign": "bottom",
+            label: (ele: NodeSingular) => `${ele.data("label")}\n${ele.data("sublabel") || ""}`,
+            "text-valign": "center",
             "text-halign": "center",
-            "font-size": "10px",
-            "text-margin-y": 5,
+            "font-size": "11px",
             "border-width": 3,
             "border-color": "#10b981",
-            width: 20,
-            height: 20,
-            "text-background-color": "#1f2937",
-            "text-background-opacity": 0.9,
-            "text-background-padding": "3px",
+            "background-color": "#134e4a",
+            width: 110,
+            height: 55,
             color: "#fff",
           },
         },
@@ -293,9 +287,9 @@ export default function DeviceGraph({
       const layoutOptions = {
         name: "dagre",
         rankDir: "TB", // Top to bottom
-        nodeSep: 80, // Horizontal separation between nodes
-        rankSep: 120, // Vertical separation between ranks
-        edgeSep: 40, // Separation between edges
+        nodeSep: 120, // Horizontal separation between nodes (increased for larger nodes)
+        rankSep: 80, // Vertical separation between ranks
+        edgeSep: 50, // Separation between edges
         padding: 50,
         animate: false,
         fit: true,
@@ -326,30 +320,61 @@ export default function DeviceGraph({
       }
     });
 
-    // Track viewport changes for dynamic gridlines and font scaling
+    // Track viewport changes for dynamic gridlines, font scaling, and label detail
     const updateViewport = () => {
       const zoom = cy.zoom();
       const pan = cy.pan();
       setViewportTransform({ zoom, panX: pan.x, panY: pan.y });
 
-      // Scale font sizes inversely with zoom (smaller when zoomed in)
-      // Base sizes: normal=8, center=12, selected=11, search=10
-      const scaleFactor = Math.max(0.5, Math.min(2, 1 / zoom));
-      const baseFontSize = 8 * scaleFactor;
+      // Scale font sizes inversely with zoom (larger base sizes for visibility)
+      const scaleFactor = Math.max(0.6, Math.min(1.8, 1 / zoom));
+      const baseFontSize = 10 * scaleFactor;
       const centerFontSize = 12 * scaleFactor;
       const selectedFontSize = 11 * scaleFactor;
-      const searchFontSize = 10 * scaleFactor;
+      const searchFontSize = 11 * scaleFactor;
+
+      // Determine label detail level based on zoom
+      // When zoomed in (zoom > 0.5), show full label with device name
+      // When zoomed out, show only the device ID
+      const showFullLabel = zoom > 0.5;
+      const labelFn = showFullLabel
+        ? (ele: NodeSingular) => `${ele.data("label")}\n${ele.data("sublabel") || ""}`
+        : (ele: NodeSingular) => ele.data("label");
+
+      // Adjust node size based on zoom - smaller when zoomed out
+      const baseWidth = showFullLabel ? 100 : 65;
+      const baseHeight = showFullLabel ? 50 : 28;
 
       // Update node styles based on zoom
       cy.style()
         .selector("node")
-        .style("font-size", `${baseFontSize}px`)
+        .style({
+          "font-size": `${baseFontSize}px`,
+          "label": labelFn,
+          "width": baseWidth,
+          "height": baseHeight,
+        })
         .selector("node.center-node")
-        .style("font-size", `${centerFontSize}px`)
+        .style({
+          "font-size": `${centerFontSize}px`,
+          "label": labelFn,
+          "width": showFullLabel ? 120 : 75,
+          "height": showFullLabel ? 60 : 32,
+        })
         .selector("node:selected")
-        .style("font-size", `${selectedFontSize}px`)
+        .style({
+          "font-size": `${selectedFontSize}px`,
+          "label": labelFn,
+          "width": showFullLabel ? 110 : 70,
+          "height": showFullLabel ? 55 : 30,
+        })
         .selector("node.search-match")
-        .style("font-size", `${searchFontSize}px`)
+        .style({
+          "font-size": `${searchFontSize}px`,
+          "label": labelFn,
+          "width": showFullLabel ? 110 : 70,
+          "height": showFullLabel ? 55 : 30,
+        })
         .update();
     };
 
@@ -454,10 +479,9 @@ export default function DeviceGraph({
   if (isLoading) {
     return (
       <div className="w-full h-full bg-gray-900 rounded-lg flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading graph data...</p>
-          <p className="text-gray-500 text-sm mt-1">This may take a moment for large datasets</p>
+        <div className="flex flex-col items-center justify-center gap-4 text-gray-500">
+          <img src={`${basePath}/loading.gif`} alt="Loading" className="w-48 h-48 md:w-64 md:h-64" />
+          <span className="text-base md:text-lg">Loading device database...</span>
         </div>
       </div>
     );

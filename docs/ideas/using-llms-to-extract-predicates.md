@@ -21,6 +21,7 @@ Volpara, Matakina Technology Limited. K 102556
 - K120828. This has predicate text `K1 00218` in it
 - K120836. This has predicate text `Ki 11034,` in it.
 - K140806. Not required because it is substantially equivalent to marketed devices before 1976 / 510k
+- K253423. It has 3 predicates but only one has corresponding text. It has K172178 but not K181872, K211650.
 ```text
 We have reviewed your Section 510(k) premarket notification of intent to market the device
 referenced above and have determined the device is substantially equivalent (for the indications
@@ -28,6 +29,22 @@ for use stated in the enclosure) to legally marketed predicate devices marketed 
 commerce prior to May 28, 1976, the enactment date of the Medical Device Amendments, or to
 devices that have been reclassified in accordance with the provisions of the Federal Food, Drug,
 and Cosmetic Act (Act) that do not require approval of a premarket approval application (PMA). 
+```
+- K252870. It has a predicate of `K222894` in the image. 
+- K252160. It has substantial equivalence to devices before 1976
+- K093125. has predicates with spaces
+```text
+Linvatec 300 W Xenon Light Source (k03 1994)
+Karl Storz Xenon Light 300 W (k9625 95)
+World of Medicine Lemke GmbH, model XL300/L5 (k021717)
+```
+- K092984. Device before 1975
+- K111803. Has text, bad scan.
+```
+e  Name Common  name Class Product  code Manufacturer K nume
+G-scan System,  nuclear  magnetic 11 LNH ESAOTE S.P.A K1123
+resonance  imaging
+Esaate,  Sp.A. S-Scan  1.3  SW  Upgrade  510(k) Page  11 of  1096
 ```
 
 ## Solutions

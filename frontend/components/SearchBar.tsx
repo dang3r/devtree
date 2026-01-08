@@ -10,10 +10,12 @@ interface SearchBarProps {
   onSearchChange: (query: string) => void;
   onDeviceSelect: (deviceId: string) => void;
   onCompanySelect: (companyName: string) => void;
+  onRandomDevice?: () => void;
   selectedDeviceId: string | null;
   highlightMode: "none" | "ancestors" | "descendants";
   onHighlightModeChange: (mode: "none" | "ancestors" | "descendants") => void;
   hasSelection: boolean;
+  isLoading?: boolean;
 }
 
 export default function SearchBar({
@@ -22,10 +24,12 @@ export default function SearchBar({
   onSearchChange,
   onDeviceSelect,
   onCompanySelect,
+  onRandomDevice,
   selectedDeviceId,
   highlightMode,
   onHighlightModeChange,
   hasSelection,
+  isLoading,
 }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -80,21 +84,23 @@ export default function SearchBar({
   };
 
   return (
-    <div className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg">
-      <div className="flex-1 relative" ref={dropdownRef}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => query.length >= 2 && setShowDropdown(true)}
-          placeholder="Search devices by name, ID, or manufacturer..."
-          className="w-full px-4 py-2 bg-gray-700 text-white rounded-md border border-gray-600 focus:border-blue-500 focus:outline-none"
-        />
+    <div className="p-2 md:p-4 bg-gray-800 rounded-lg space-y-2 md:space-y-3">
+      {/* Search input with random button */}
+      <div className="flex gap-2 md:gap-3">
+        <div className="relative flex-1" ref={dropdownRef}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => query.length >= 2 && setShowDropdown(true)}
+            placeholder="Search devices, IDs, or companies..."
+            className="w-full px-3 py-2.5 md:px-5 md:py-3 bg-gray-700 text-white text-base md:text-lg rounded-md border border-gray-600 focus:border-blue-500 focus:outline-none"
+          />
 
         {/* Search Results Dropdown */}
         {showDropdown && (
-          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg max-h-96 overflow-y-auto">
+          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg max-h-[60vh] md:max-h-96 overflow-y-auto">
             {!hasResults ? (
               <div className="px-4 py-3 text-gray-400 text-sm">
                 No results found matching "{query}"
@@ -111,7 +117,7 @@ export default function SearchBar({
                       <button
                         key={company.name}
                         onClick={() => handleCompanyClick(company.name)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-700 border-b border-gray-700 transition-colors"
+                        className="w-full px-4 py-3 text-left hover:bg-gray-700 active:bg-gray-600 border-b border-gray-700 transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-lg">🏢</span>
@@ -133,24 +139,24 @@ export default function SearchBar({
                 {searchResults.length > 0 && (
                   <>
                     <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
-                      Devices ({searchResults.length} result{searchResults.length !== 1 ? "s" : ""})
+                      Devices ({searchResults.length})
                     </div>
                     {searchResults.map((node) => (
                       <button
                         key={node.data.id}
                         onClick={() => handleDeviceClick(node.data.id)}
-                        className="w-full px-4 py-3 text-left hover:bg-gray-700 border-b border-gray-700 last:border-b-0 transition-colors"
+                        className="w-full px-4 py-3 text-left hover:bg-gray-700 active:bg-gray-600 border-b border-gray-700 last:border-b-0 transition-colors"
                       >
                         <div className="flex items-start gap-2">
                           {getClassBadge(node.data.device_class)}
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-white truncate">
+                            <div className="font-medium text-white truncate text-sm md:text-base">
                               {node.data.device_name}
                             </div>
-                            <div className="text-sm text-gray-400 flex items-center gap-2">
+                            <div className="text-xs md:text-sm text-gray-400 flex items-center gap-2">
                               <span className="font-mono">{node.data.id}</span>
-                              <span className="text-gray-600">•</span>
-                              <span className="truncate">{node.data.applicant}</span>
+                              <span className="hidden md:inline text-gray-600">•</span>
+                              <span className="hidden md:inline truncate">{node.data.applicant}</span>
                             </div>
                           </div>
                         </div>
@@ -162,41 +168,53 @@ export default function SearchBar({
             )}
           </div>
         )}
+        </div>
+
+        {/* Random device button */}
+        {onRandomDevice && (
+          <button
+            onClick={onRandomDevice}
+            disabled={isLoading}
+            className="px-3 md:px-5 py-2.5 md:py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-sm md:text-base font-medium rounded-md whitespace-nowrap transition-colors"
+          >
+            Random device
+          </button>
+        )}
       </div>
 
-      {/* Highlight mode buttons - only show when a device is focused */}
+      {/* Highlight mode buttons - separate row, only when device focused */}
       {selectedDeviceId && (
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400 text-sm">Highlight:</span>
+        <div className="flex items-center gap-1 md:gap-3 pt-1">
+          <span className="text-gray-400 text-xs md:text-sm mr-1">Highlight:</span>
           <button
             onClick={() => onHighlightModeChange("none")}
             disabled={!hasSelection}
-            className={`px-3 py-1 rounded text-sm ${
+            className={`px-2 md:px-4 py-1 md:py-2 rounded text-xs md:text-sm flex-1 md:flex-none ${
               highlightMode === "none"
                 ? "bg-blue-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600 active:bg-gray-500"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             None
           </button>
           <button
-            onClick={() => onHighlightModeChange("ancestors")}
+            onClick={() => onHighlightModeChange("descendants")}
             disabled={!hasSelection}
-            className={`px-3 py-1 rounded text-sm ${
-              highlightMode === "ancestors"
+            className={`px-2 md:px-4 py-1 md:py-2 rounded text-xs md:text-sm flex-1 md:flex-none ${
+              highlightMode === "descendants"
                 ? "bg-purple-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600 active:bg-gray-500"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             Ancestors
           </button>
           <button
-            onClick={() => onHighlightModeChange("descendants")}
+            onClick={() => onHighlightModeChange("ancestors")}
             disabled={!hasSelection}
-            className={`px-3 py-1 rounded text-sm ${
-              highlightMode === "descendants"
+            className={`px-2 md:px-4 py-1 md:py-2 rounded text-xs md:text-sm flex-1 md:flex-none ${
+              highlightMode === "ancestors"
                 ? "bg-purple-600 text-white"
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600 active:bg-gray-500"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             Descendants

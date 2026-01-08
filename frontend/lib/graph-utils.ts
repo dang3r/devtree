@@ -2,12 +2,22 @@ import type { CytoscapeGraphData, CytoscapeNode, CytoscapeEdge } from "@/types/d
 import type { ElementDefinition } from "cytoscape";
 
 export function convertToElements(data: CytoscapeGraphData): ElementDefinition[] {
-  const nodes: ElementDefinition[] = data.elements.nodes.map((node) => ({
-    data: {
-      ...node.data,
-      label: node.data.device_name,
-    },
-  }));
+  const nodes: ElementDefinition[] = data.elements.nodes.map((node) => {
+    // Truncate device name for display inside the node
+    const maxNameLength = 25;
+    const deviceName = node.data.device_name || "";
+    const truncatedName = deviceName.length > maxNameLength
+      ? deviceName.substring(0, maxNameLength - 1) + "…"
+      : deviceName;
+
+    return {
+      data: {
+        ...node.data,
+        label: node.data.id,
+        sublabel: truncatedName,
+      },
+    };
+  });
 
   const edges: ElementDefinition[] = data.elements.edges.map((edge) => ({
     data: edge.data,
@@ -59,7 +69,8 @@ export function findPathToRoot(
 ): cytoscape.Collection {
   const node = cy.getElementById(nodeId);
   let path = cy.collection().union(node);
-  let current = node;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let current: any = node;
 
   while (current.nonempty()) {
     const incomers = current.incomers();
