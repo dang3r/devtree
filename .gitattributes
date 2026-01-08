@@ -1,0 +1,9 @@
+# Git LFS tracking for large data files
+data/*.json filter=lfs diff=lfs merge=lfs -text
+device_text/*.txt filter=lfs diff=lfs merge=lfs -text
+
+# Keep small config files as regular git objects
+*.md text
+*.py text
+*.yml text
+*.yaml text
