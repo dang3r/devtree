@@ -14,8 +14,8 @@ from typing import Literal
 
 import httpx
 from pydantic import BaseModel
-from lib import get_db, save_db
-from lib import FDA_JSON_PATH, DeviceEntry
+
+from lib import FDA_JSON_PATH, DeviceEntry, get_db, save_db
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38"}
 MAX_CONCURRENT = 3
@@ -183,48 +183,44 @@ def device_ids_without_pdfs(pdf_path: Path, fda_json_path: Path) -> list[str]:
 
 
 def main():
-
     db = get_db()
     fda_data = json.load(open(FDA_JSON_PATH))
     fda_device_ids = [d["k_number"] for d in fda_data["results"]]
-    db_device_ids = [(did, data) for did, data in db.devices.items()]
-    fda_device_ids_set = set(fda_device_ids)
-    db_device_ids_set = set([did for did, data in db_device_ids])
-    delta_device_ids = fda_device_ids_set - db_device_ids_set
-    for delta_device_id in delta_device_ids:
-        if delta_device_id not in db.devices:
-            db.devices[delta_device_id] = DeviceEntry(
-                old_predicates=[],
-                has_pdf=None,
-                pdf_downloaded=False,
-            )
+
+    # Add any FDA devices not in DB
+    for device_id in fda_device_ids:
+        if device_id not in db.devices:
+            db.devices[device_id] = DeviceEntry()
     save_db(db)
+
+    # Find devices that haven't been checked for PDFs yet
     db = get_db()
-    new_device_ids = [
-        (did, data)
-        for did, data in db.devices.items()
-        if data.has_pdf is None and did.startswith("K959")
+    to_download = [
+        (did, entry)
+        for did, entry in db.devices.items()
+        if entry.pdf.exists is None and did.startswith("K959")
     ]
 
-    print("Attempting download of", len(new_device_ids), "devices")
+    print("Attempting download of", len(to_download), "devices")
     input("Press Enter to continue...")
 
     summary = download_pdfs(
-        [did for did, data in new_device_ids],
+        [did for did, _ in to_download],
         Path(__file__).parent.parent.parent / "pdfs",
     )
 
-    # update db using the summary
+    # Update DB with results
     for result in summary.results:
+        entry = db.devices[result.device_id]
         if result.status == "success" or result.status == "skipped":
-            db.devices[result.device_id].has_pdf = True
-            db.devices[result.device_id].pdf_downloaded = True
+            entry.pdf.exists = True
+            entry.pdf.downloaded = True
         elif result.status == "not_found":
-            db.devices[result.device_id].pdf_downloaded = False
-            db.devices[result.device_id].has_pdf = False
+            entry.pdf.exists = False
+            entry.pdf.downloaded = False
         else:
-            db.devices[result.device_id].pdf_downloaded = False
-            db.devices[result.device_id].has_pdf = None
+            entry.pdf.exists = None
+            entry.pdf.downloaded = False
     save_db(db)
 
 

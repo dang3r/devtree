@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """OCR a PDF using Ollama's vision model."""
 
-import argparse
 import base64
 import io
-import json
-import sys
-import threading
-import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from pathlib import Path
-import pathlib
+import re
 import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
 import fitz  # pymupdf
 import requests
 from PIL import Image
+from pydantic import BaseModel
 from tqdm import tqdm
 
-from pydantic import BaseModel
-
-from lib import PDF_PATH, get_db, save_db, TEXT_PATH
+from lib import PDF_PATH, TEXT_PATH, get_db, save_db
 
 
 class OcrOllamaResult(BaseModel):
     device_id: str
     output_path: Path
+    method: str
     error: str | None = None
-    model: str
 
 
 def pdf_page_to_base64(pdf_path: Path, page_num: int, dpi: int = 100) -> str:
@@ -68,13 +63,13 @@ def ocr_pdf(
     device_id: str,
     model: str = "gemma3",
     dpi: int = 100,
-) -> str:
+) -> OcrOllamaResult:
     """OCR all pages of a PDF with parallel processing."""
-    try:
-        pdf_path = PDF_PATH / f"{device_id}.pdf"
-        output_path = TEXT_PATH / f"{device_id}.json"
+    pdf_path = PDF_PATH / f"{device_id}.pdf"
+    output_path = TEXT_PATH / f"{device_id}.txt"
+    method = f"ollama_{model}_{dpi}"
 
-        # OCR
+    try:
         tqdm.write(f"OCRing {pdf_path.name} to {output_path}")
         doc = fitz.open(pdf_path)
         num_pages = len(doc)
@@ -84,24 +79,21 @@ def ocr_pdf(
             text = ocr_image_with_ollama([image_b64], model)
             all_text += text
 
-        text_data = {
-            "text": all_text,
-            "method": f"ollama_{model}_{dpi}",
-        }
-        output_path.write_text(json.dumps(text_data, indent=2))
+        # Save as plain .txt file
+        output_path.write_text(all_text)
         doc.close()
         tqdm.write(f"OCRed {pdf_path.name} to {output_path}")
         return OcrOllamaResult(
-            device_id=pdf_path.name,
+            device_id=device_id,
             output_path=output_path,
-            model=model,
+            method=method,
         )
     except Exception as e:
         return OcrOllamaResult(
             device_id=device_id,
             output_path=output_path,
+            method=method,
             error=str(e),
-            model=model,
         )
 
 
@@ -109,45 +101,46 @@ def main():
     dpi = 100
     model = "ministral-3:3b"
     max_concurrent = 1
-    output_path = TEXT_PATH
 
     db = get_db()
-    device_ids_with_discrepancy = []
-    for device_id, device in db.devices.items():
-        if not device.predicates and device.has_pdf and device_id.startswith("K99"):
-            fpath = TEXT_PATH / f"{device_id}.json"
-            if not fpath.exists():
-                continue
-            text = json.load(open(TEXT_PATH / f"{device_id}.json"))["text"]
-            import re
 
+    # Find devices with PDFs that mention "predicate" but have no predicates extracted
+    device_ids_to_ocr = []
+    for device_id, entry in db.devices.items():
+        if not entry.preds.values and entry.pdf.exists and device_id.startswith("K99"):
+            txt_path = TEXT_PATH / f"{device_id}.txt"
+            if not txt_path.exists():
+                continue
+            text = txt_path.read_text()
             predicates = re.findall("predicate", text, re.IGNORECASE)
             if len(predicates) > 1:
-                device_ids_with_discrepancy.append(device_id)
+                device_ids_to_ocr.append(device_id)
 
-    print(len(device_ids_with_discrepancy))
-
-    print(f"OCRing {len(device_ids_with_discrepancy)} devices")
+    print(f"Found {len(device_ids_to_ocr)} devices to OCR")
     input("Press Enter to continue")
 
     with ProcessPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {
-            executor.submit(
-                ocr_pdf,
-                device_id,
-                model,
-                dpi,
-            ): device_id
-            for device_id in device_ids_with_discrepancy
+            executor.submit(ocr_pdf, device_id, model, dpi): device_id
+            for device_id in device_ids_to_ocr
         }
         for future in tqdm(
             as_completed(futures), total=len(futures), desc="OCRing PDFs"
         ):
             try:
                 result = future.result()
-                tqdm.write(f"OCRed {result.device_id} to {result.output_path}")
-            except Exception as e:
+                if result.error:
+                    tqdm.write(f"Error OCRing {result.device_id}: {result.error}")
+                else:
+                    # Update DB with extraction method
+                    entry = db.devices[result.device_id]
+                    entry.text.extracted = True
+                    entry.text.method = result.method
+                    tqdm.write(f"OCRed {result.device_id} to {result.output_path}")
+            except Exception:
                 traceback.print_exc()
+
+    save_db(db)
 
 
 if __name__ == "__main__":

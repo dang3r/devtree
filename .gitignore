@@ -11,10 +11,10 @@ wheels/
 
 # Data files
 *.zip
-data/
 
 # PDFs are ephemeral (downloaded on demand, not stored in git)
 pdfs/
+text/
 
 # Node
 node_modules
