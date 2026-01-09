@@ -149,7 +149,7 @@ def extract_device_node(
     return DeviceNode(
         device_name=device.get("device_name", "Unknown"),
         applicant=applicant,
-        contact=contact,
+        contact=device.get("contact", contact),
         decision_date=device.get("decision_date"),
         device_class=openfda.get("device_class"),
         product_code=device.get("product_code"),
