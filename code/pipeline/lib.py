@@ -39,6 +39,7 @@ class PredicateState(pydantic.BaseModel):
     """Tracks predicate extraction state."""
 
     extracted: bool = False  # Have we run K-number extraction?
+<<<<<<< HEAD
 
     values: list[str] = pydantic.Field(default_factory=list)  # Valid K-numbers
     malformed: list[str] = pydantic.Field(default_factory=list)  # Partial matches
@@ -50,6 +51,10 @@ class PredicateState(pydantic.BaseModel):
     @pydantic.field_serializer("malformed")
     def serialize_malformed(self, malformed: list[str]) -> list[str]:
         return sorted(malformed)
+=======
+    values: list[str] = pydantic.Field(default_factory=list)  # Valid K-numbers
+    malformed: list[str] = pydantic.Field(default_factory=list)  # Partial matches
+>>>>>>> master
 
 
 class DeviceEntry(pydantic.BaseModel):
@@ -65,6 +70,7 @@ class Database(pydantic.BaseModel):
 
     devices: dict[str, DeviceEntry] = pydantic.Field(default_factory=dict)
 
+<<<<<<< HEAD
     @pydantic.field_serializer("devices")
     def serialize_devices(
         self, devices: dict[str, DeviceEntry]
@@ -78,6 +84,15 @@ def get_db(path: pathlib.Path = DB_PATH) -> Database:
     return Database.model_validate(data)
 
 
+=======
+
+def get_db(path: pathlib.Path = DB_PATH) -> Database:
+    """Load database with Pydantic validation."""
+    data = json.loads(path.read_text())
+    return Database.model_validate(data)
+
+
+>>>>>>> master
 def save_db(db: Database, path: pathlib.Path = DB_PATH) -> None:
     """Atomic write with temp file swap."""
     db.devices = dict(sorted(db.devices.items(), key=lambda x: x[0]))
