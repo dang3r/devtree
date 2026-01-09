@@ -39,8 +39,17 @@ class PredicateState(pydantic.BaseModel):
     """Tracks predicate extraction state."""
 
     extracted: bool = False  # Have we run K-number extraction?
+
     values: list[str] = pydantic.Field(default_factory=list)  # Valid K-numbers
     malformed: list[str] = pydantic.Field(default_factory=list)  # Partial matches
+
+    @pydantic.field_serializer("values")
+    def serialize_values(self, values: list[str]) -> list[str]:
+        return sorted(values)
+
+    @pydantic.field_serializer("malformed")
+    def serialize_malformed(self, malformed: list[str]) -> list[str]:
+        return sorted(malformed)
 
 
 class DeviceEntry(pydantic.BaseModel):
@@ -55,6 +64,12 @@ class Database(pydantic.BaseModel):
     """Database of device entries."""
 
     devices: dict[str, DeviceEntry] = pydantic.Field(default_factory=dict)
+
+    @pydantic.field_serializer("devices")
+    def serialize_devices(
+        self, devices: dict[str, DeviceEntry]
+    ) -> dict[str, DeviceEntry]:
+        return dict(sorted(devices.items(), key=lambda x: x[0]))
 
 
 def get_db(path: pathlib.Path = DB_PATH) -> Database:

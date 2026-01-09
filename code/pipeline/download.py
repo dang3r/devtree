@@ -196,9 +196,7 @@ def main():
     # Find devices that haven't been checked for PDFs yet
     db = get_db()
     to_download = [
-        (did, entry)
-        for did, entry in db.devices.items()
-        if entry.pdf.exists is None and did.startswith("K959")
+        (did, entry) for did, entry in db.devices.items() if entry.pdf.exists is None
     ]
 
     print("Attempting download of", len(to_download), "devices")
