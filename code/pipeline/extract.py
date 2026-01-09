@@ -1,14 +1,12 @@
-import json
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Literal
 
 import tqdm
-from lib import DeviceEntry, TEXT_PATH
-
 from pydantic import BaseModel
 
-# make case insensitive regex
+from lib import TEXT_PATH, DeviceEntry
+
+# Case insensitive regex for K-numbers
 K_NUMBER_PATTERN = re.compile(r"((k|den)\d{6})", re.IGNORECASE)
 MALFORMED_PATTERN = re.compile(
     r"k\s*\d[\s\d]{5,8}", re.IGNORECASE
@@ -20,14 +18,12 @@ class ExtractionResult(BaseModel):
 
     device_id: str
     predicates: list[str]
-    malformed_predicates: list[str]
+    malformed: list[str]
     error: str | None = None
-    extraction_method: str
 
 
 def extract_k_numbers(text: str) -> list[str]:
-    """Find all unique K-numbers, preserving order."""
-    # we now have 1 capture group for the k or den number but return full string for convenience
+    """Find all unique K-numbers."""
     matches = K_NUMBER_PATTERN.findall(text)
     matches = [m[0] for m in matches]
     return list(set(matches))
@@ -36,7 +32,6 @@ def extract_k_numbers(text: str) -> list[str]:
 def find_malformed_k_numbers(text: str) -> list[str]:
     """Find K-numbers with spaces or typos."""
     matches = MALFORMED_PATTERN.findall(text)
-    # Filter out valid K-numbers that might match
     malformed = []
     for m in matches:
         normalized = re.sub(r"\s", "", m)
@@ -47,55 +42,43 @@ def find_malformed_k_numbers(text: str) -> list[str]:
 
 def extract_predicates_from_text_single(
     device_id: str, device: DeviceEntry
-) -> ExtractionResult:
+) -> ExtractionResult | None:
     try:
-        text_path = TEXT_PATH / f"{device_id}.json"
-        if not text_path.exists():
-            return ExtractionResult(
-                device_id=device_id,
-                predicates=[],
-                malformed_predicates=[],
-                extraction_method="none",
-            )
-
+        # Skip DEN devices (De Novo, don't have predicates)
         if device_id.startswith("DEN"):
-            return ExtractionResult(
-                device_id=device_id,
-                predicates=[],
-                malformed_predicates=[],
-                extraction_method="none",
-            )
+            return None
 
-        text_data = json.loads(text_path.read_text())
-        text = text_data["text"]
+        # Read plain .txt file
+        text_path = TEXT_PATH / f"{device_id}.txt"
+        if not text_path.exists():
+            return None
+
+        text = text_path.read_text()
         predicates = extract_k_numbers(text)
         predicates = [k.upper() for k in predicates]
         predicates = [k for k in predicates if k != device_id]
 
-        malformed_predicates = find_malformed_k_numbers(text)
-        malformed_predicates = [k.upper() for k in malformed_predicates]
-        malformed_predicates = [k for k in malformed_predicates if k != device_id]
+        malformed = find_malformed_k_numbers(text)
+        malformed = [k.upper() for k in malformed]
+        malformed = [k for k in malformed if k != device_id]
 
-        # uppercase all predicates
         return ExtractionResult(
             device_id=device_id,
             predicates=predicates,
-            malformed_predicates=malformed_predicates,
-            extraction_method=text_data["method"],
+            malformed=malformed,
         )
     except Exception as e:
         return ExtractionResult(
             device_id=device_id,
             predicates=[],
-            malformed_predicates=[],
-            extraction_method="none",
+            malformed=[],
             error=str(e),
         )
 
 
 def extract_predicates_from_text(
     device_entries: list[tuple[str, DeviceEntry]],
-) -> list[ExtractionResult]:
+) -> list[ExtractionResult | None]:
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(extract_predicates_from_text_single, device_id, device)
@@ -108,20 +91,31 @@ def extract_predicates_from_text(
 
 
 def main():
-    from lib import get_db, save_db
+    from lib import get_db, save_db, save_predicates
 
     db = get_db()
     device_entries = [(device_id, device) for device_id, device in db.devices.items()]
     results = extract_predicates_from_text(device_entries)
+
     for result in results:
-        print(result)
-        if result is not None:
-            db.devices[result.device_id].predicates = result.predicates
-            db.devices[result.device_id].malformed_predicates = (
-                result.malformed_predicates
-            )
-            db.devices[result.device_id].extraction_method = result.extraction_method
+        if result is None:
+            continue
+        entry = db.devices[result.device_id]
+        entry.preds.extracted = True
+        entry.preds.values = result.predicates
+        entry.preds.malformed = result.malformed
+
+    # Save full state to devices.json
     save_db(db)
+
+    # Save predicates to versioned file
+    predicates = {
+        did: entry.preds.values
+        for did, entry in db.devices.items()
+        if entry.preds.values
+    }
+    save_predicates(predicates)
+    print(f"Saved {len(predicates)} devices with predicates to predicates.json")
 
 
 if __name__ == "__main__":
