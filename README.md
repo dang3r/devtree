@@ -25,7 +25,7 @@ cd frontend
 npm run build
 ```
 
-This generates a static site in the `frontend/out/` directory.
+This generates a static site in the `frontend/out/` directory. Copy to `docs`.
 
 To serve the static site locally:
 
