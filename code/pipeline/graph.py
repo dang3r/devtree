@@ -72,30 +72,26 @@ def load_fda_data(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def load_predicates(path: Path) -> dict[str, list[str]]:
-    """Load predicate relationships from predicates.json (legacy format)."""
+    """Load predicate relationships from predicates.json (simple format)."""
     print(f"Loading predicates from {path}...")
     with open(path) as f:
-        data = json.load(f)
-
-    predicates = {}
-    for k_num, info in data.get("devices", {}).items():
-        preds = info.get("predicates", [])
-        if preds:
-            predicates[k_num] = preds
+        predicates = json.load(f)
 
     print(f"  Loaded {len(predicates):,} devices with predicates")
     return predicates
 
 
 def load_predicates_from_db(path: Path) -> dict[str, list[str]]:
-    """Load predicate relationships from db.json (new format)."""
-    print(f"Loading predicates from db.json at {path}...")
+    """Load predicate relationships from devices.json."""
+    print(f"Loading predicates from devices.json at {path}...")
     with open(path) as f:
         data = json.load(f)
 
     predicates = {}
     for k_num, entry in data.get("devices", {}).items():
-        preds = entry.get("predicates", [])
+        # New nested format: entry.preds.values
+        preds_data = entry.get("preds", {})
+        preds = preds_data.get("values", [])
         if preds:
             predicates[k_num] = preds
 
@@ -293,14 +289,20 @@ def export_cytoscape(graph: DeviceGraph, output_path: Path) -> None:
 
 
 def main():
-    from lib import FDA_JSON_PATH, DB_PATH, CONTACTS_PATH, GRAPH_PATH, CYTOSCAPE_PATH
+    from lib import (
+        CONTACTS_PATH,
+        CYTOSCAPE_PATH,
+        FDA_JSON_PATH,
+        GRAPH_PATH,
+        PREDICATES_PATH,
+    )
 
     graph = build_graph(
         FDA_JSON_PATH,
-        DB_PATH,  # Use db.json instead of predicates.json
+        PREDICATES_PATH,  # Use predicates.json (simple format)
         CONTACTS_PATH,
         None,
-        use_db_format=True,
+        use_db_format=False,
     )
     export_graph(graph, GRAPH_PATH)
     export_cytoscape(graph, CYTOSCAPE_PATH)
