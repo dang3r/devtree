@@ -133,7 +133,7 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
     // Update URL without navigation
-    window.history.pushState(null, "", `${basePath}/device/${deviceId}`);
+    window.history.pushState(null, "", `/device/${deviceId}`);
   }, []);
 
   const handleCompanySelect = useCallback((companyName: string) => {
@@ -142,7 +142,7 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setSelectedNodeId(null);
     setHighlightMode("none");
     // Update URL without navigation
-    window.history.pushState(null, "", `${basePath}/company/${encodeURIComponent(companyName)}`);
+    window.history.pushState(null, "", `/company/${encodeURIComponent(companyName)}`);
   }, []);
 
   const handleNodeSelect = useCallback((nodeId: string | null) => {
@@ -170,7 +170,7 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setSelectedNodeId(null);
     setHighlightMode("none");
     // Update URL without navigation
-    window.history.pushState(null, "", `${basePath}/`);
+    window.history.pushState(null, "", "/");
   }, []);
 
   // Navigate to a device from the panel
@@ -180,7 +180,7 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
     // Update URL without navigation
-    window.history.pushState(null, "", `${basePath}/device/${deviceId}`);
+    window.history.pushState(null, "", `/device/${deviceId}`);
   }, []);
 
   // Select a random device
@@ -193,7 +193,7 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    window.history.pushState(null, "", `${basePath}/device/${deviceId}`);
+    window.history.pushState(null, "", `/device/${deviceId}`);
   }, [data]);
 
   if (error) {
