@@ -272,7 +272,6 @@ def export_cytoscape(graph: DeviceGraph, output_path: Path) -> None:
 
 def main():
     from lib import (
-        CONTACTS_PATH,
         CYTOSCAPE_PATH,
         FDA_JSON_PATH,
         GRAPH_PATH,

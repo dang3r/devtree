@@ -4,19 +4,22 @@ import pathlib
 import pydantic
 
 DATA_PATH = pathlib.Path(__file__).parent.parent.parent / "data"
+TEXT_PATH = DATA_PATH.parent / "text"
 DB_PATH = DATA_PATH / "devices.json"
 
 PDF_DATA_PATH = DATA_PATH / "pdf.json"
 
 FDA_JSON_PATH = DATA_PATH / "device-510k-0001-of-0001.json"
-TEXT_PATH = DATA_PATH.parent / "device_text"
 PDF_PATH = DATA_PATH.parent / "pdfs"
 
-CONTACTS_PATH = DATA_PATH / "pmn96cur.txt"
 
 GRAPH_PATH = DATA_PATH / "graph.json"
 CYTOSCAPE_PATH = DATA_PATH / "cytoscape.json"
 PREDICATES_PATH = DATA_PATH / "predicates.json"
+
+RAWTEXT_PATH = TEXT_PATH / "raw_text"
+MINISTRAL3_3B_PATH = TEXT_PATH / "ministral3_3b"
+TESSERACT_TEXT_PATH = TEXT_PATH / "tesseract"
 
 
 PREDICATES_OVERRIDES_PATH = DATA_PATH / "predicate_overrides.json"

@@ -6,7 +6,7 @@ URL pattern: https://www.accessdata.fda.gov/cdrh_docs/pdf{YY}/{K_NUMBER}.pdf
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 import re
@@ -192,19 +192,43 @@ def main():
     fda_data = json.load(open(FDA_JSON_PATH))
     fda_device_ids = [d["k_number"] for d in fda_data["results"]]
 
+    # Devices approved before this date are considered old. Do not retrieve their PDFS
+    threshold_date = datetime.now(timezone.utc) - timedelta(days=365)
+    device_ids_1yold = [
+        d["k_number"]
+        for d in fda_data["results"]
+        if datetime.strptime(d["decision_date"], "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+        <= threshold_date
+    ]
+
+    # Sometimes summaries are not available immediately. Wait for 30 days after approval before stopping
+    one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    recent_device_ids = [
+        d["k_number"]
+        for d in fda_data["results"]
+        if datetime.strptime(d["decision_date"], "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+        >= one_month_ago
+    ]
+
+    # Do not download PDFS for devices we know have no summaries
     pdf_data = json.load(open(PDF_DATA_PATH))
-    skip_device_ids = pdf_data["no_summary"]
+    device_ids_with_no_summary = pdf_data["no_summary"]
 
-    existing_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
+    device_ids_with_local_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
 
-    to_download = set(fda_device_ids) - set(skip_device_ids) - set(existing_pdfs)
-
-    # filter for devices starting with K12
-    to_download = [did for did in to_download if did.startswith("K90")]
+    to_download = (
+        set(fda_device_ids)
+        - set(device_ids_with_no_summary)
+        - set(device_ids_1yold)
+        - set(device_ids_with_local_pdfs)
+    ) | (set(recent_device_ids) - set(device_ids_with_local_pdfs))
 
     print("Found", len(to_download), "devices to download")
 
-    # Only use 10 devices
     print("Attempting download of", len(to_download), "devices")
     input("Press Enter to continue...")
 
@@ -215,8 +239,9 @@ def main():
 
     # Save results
     for result in summary.results:
-        if result.status == "not_found":
+        if result.status == "not_found" and result.device_id not in recent_device_ids:
             pdf_data["no_summary"].append(result.device_id)
+
     with open(PDF_DATA_PATH, "w") as f:
         pdf_data["no_summary"].sort()
         json.dump(pdf_data, f, indent=2, default=str)

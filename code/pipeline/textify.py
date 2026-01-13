@@ -49,7 +49,7 @@ def extract_text(device_id: str) -> TextifyResult | None:
         pdf_quality = "rich" if pdf_char_density > 100 else "sparse"
 
         # Save as plain .txt file
-        dst_path = TEXT_PATH / f"{device_id}.txt"
+        dst_path = RAWTEXT_PATH / f"{device_id}.txt"
         dst_path.write_text(text)
 
         return TextifyResult(

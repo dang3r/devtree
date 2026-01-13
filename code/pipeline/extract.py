@@ -1,11 +1,15 @@
+import argparse
 import json
+import pathlib
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import tqdm
 from pydantic import BaseModel
 
-from lib import PREDICATES_OVERRIDES_PATH, PREDICATES_PATH, TEXT_PATH, DeviceEntry
+from lib import (
+    DATA_PATH,
+)
 
 # Case insensitive regex for K-numbers
 K_NUMBER_PATTERN = re.compile(r"((k|den)\d{6})", re.IGNORECASE)
@@ -29,14 +33,15 @@ def extract_k_numbers(text: str) -> list[str]:
     return list(set(matches))
 
 
-def extract_predicates_from_text_single(device_id: str) -> ExtractionResult | None:
+def extract_predicates_from_text_single(
+    device_id: str, text_path: pathlib.Path
+) -> ExtractionResult | None:
     try:
         # Skip DEN devices (De Novo, don't have predicates)
         if device_id.startswith("DEN"):
             return None
 
         # Read plain .txt file
-        text_path = TEXT_PATH / f"{device_id}.txt"
         if not text_path.exists():
             return None
 
@@ -62,8 +67,8 @@ def extract_predicates_from_text(
 ) -> list[ExtractionResult | None]:
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(extract_predicates_from_text_single, device_id)
-            for device_id in device_ids
+            executor.submit(extract_predicates_from_text_single, device_id, text_path)
+            for device_id, text_path in device_ids
         ]
         return [
             future.result()
@@ -72,8 +77,19 @@ def extract_predicates_from_text(
 
 
 def main():
-    # identify all text files in text directory
-    device_ids = [p.stem for p in TEXT_PATH.glob("*.txt")]
+    """
+    Extract predicates from text files using regex matching.
+
+    """
+    args = argparse.ArgumentParser()
+    args.add_argument("--text_folder", type=str, required=True)
+    args = args.parse_args()
+
+    folder = pathlib.Path(args.text_folder)
+    method = f"regex_{folder.stem}"
+    dst_path = DATA_PATH / f"predicates_{method}.json"
+
+    device_ids = [(p.stem, p) for p in folder.glob("*.txt")]
     results = extract_predicates_from_text(device_ids)
 
     did_to_predicates = {}
@@ -82,9 +98,9 @@ def main():
             continue
         did_to_predicates[result.device_id] = {}
         did_to_predicates[result.device_id]["predicates"] = result.predicates
-        did_to_predicates[result.device_id]["method"] = "regex_rawtext"
+        did_to_predicates[result.device_id]["method"] = method
 
-    with open("data/predicates_regex_rawtext.json", "w") as f:
+    with open(dst_path, "w") as f:
         json.dump(did_to_predicates, f, indent=2)
 
 
