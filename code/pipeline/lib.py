@@ -25,6 +25,7 @@ TESSERACT_TEXT_PATH = TEXT_PATH / "tesseract"
 PREDICATES_OVERRIDES_PATH = DATA_PATH / "predicate_overrides.json"
 PREDICATES_RAWTEXT_PATH = DATA_PATH / "predicates_regex_rawtext.json"
 PREDICATES_CLAUDECODE_PATH = DATA_PATH / "predicates_claudecode.json"
+PREDICATES_MINISTRAL3_3B_PATH = DATA_PATH / "predicates_regex_ministral3_3b.json"
 
 
 def get_predicates_rawtext(
@@ -51,8 +52,20 @@ def get_human_predicates(
     return json.loads(path.read_text())
 
 
+def get_ministral3_3b_predicates(
+    path: pathlib.Path = PREDICATES_MINISTRAL3_3B_PATH,
+) -> dict[str, list[str]]:
+    return json.loads(path.read_text())
+
+
 def get_predicates():
     rawtext_predicates = get_predicates_rawtext()
     claudecode_predicates = get_claudecode_predicates()
     human_predicates = get_human_predicates()
-    return {**rawtext_predicates, **claudecode_predicates, **human_predicates}
+    ministral3_3b_predicates = get_ministral3_3b_predicates()
+    return {
+        **rawtext_predicates,
+        **ministral3_3b_predicates,
+        **claudecode_predicates,
+        **human_predicates,
+    }

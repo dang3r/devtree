@@ -1,4 +1,30 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "python.languageServer": "Pylance"
+  "python.languageServer": "Pylance",
+
+
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/.git": true
+  },
+  "search.exclude": {
+    "*": true,
+    "code/**": false,
+    "frontend/app/**": false,
+    "frontend/lib/**": false,
+    "frontend/components/**": false
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/node_modules/**": true,
+    "**/docs/**": true,
+    "**/data/**": true,
+    "**/pdfs/**": true,
+    "**/device_text/**": true
+  },
+
+  "editor.rulers": [
+    120
+  ]
 }
