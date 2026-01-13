@@ -3,10 +3,7 @@
 
 import base64
 import io
-import re
 import sys
-import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import fitz  # pymupdf
@@ -15,7 +12,7 @@ from PIL import Image
 from pydantic import BaseModel
 from tqdm import tqdm
 
-from lib import PDF_PATH, TEXT_PATH, get_db, save_db
+from lib import PDF_PATH
 
 
 class OcrOllamaResult(BaseModel):
@@ -70,6 +67,13 @@ def ocr_pdf(
     pdf_path = PDF_PATH / f"{device_id}.pdf"
     method = f"ollama_{model}_{dpi}"
 
+    if output_path.exists():
+        return OcrOllamaResult(
+            device_id=device_id,
+            output_path=output_path,
+            method=method,
+        )
+
     try:
         tqdm.write(f"OCRing {pdf_path.name} to {output_path}")
         doc = fitz.open(pdf_path)
@@ -101,10 +105,8 @@ def ocr_pdf(
 def main():
     dpi = 100
     model = "ministral-3:3b"
-    max_concurrent = 1
-
     device_id = sys.argv[1]
-    output_path = Path("tmptext") / f"{device_id}.txt"
+    output_path = Path("text/ministral3_3b") / f"{device_id}.txt"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result = ocr_pdf(device_id, output_path, model, dpi)
     print(result)
