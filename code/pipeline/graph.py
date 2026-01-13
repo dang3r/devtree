@@ -136,20 +136,15 @@ def load_company_mappings(path: Path) -> dict[str, str]:
 
 def extract_device_node(
     device: dict[str, Any],
-    contact: str | None = None,
-    company_mappings: dict[str, str] | None = None,
 ) -> DeviceNode:
     """Extract DeviceNode from FDA device data."""
     openfda = device.get("openfda", {})
-
     applicant = device.get("applicant", "Unknown")
-    if company_mappings and applicant in company_mappings:
-        applicant = company_mappings[applicant]
 
     return DeviceNode(
         device_name=device.get("device_name", "Unknown"),
         applicant=applicant,
-        contact=device.get("contact", contact),
+        contact=device.get("contact"),
         decision_date=device.get("decision_date"),
         device_class=openfda.get("device_class"),
         product_code=device.get("product_code"),
@@ -166,10 +161,7 @@ def extract_device_node(
 
 def build_graph(
     fda_data_path: Path,
-    predicates_path: Path,
-    contacts_path: Path | None = None,
-    company_mappings_path: Path | None = None,
-    use_db_format: bool = False,
+    predicates: dict,
 ) -> DeviceGraph:
     """
     Build the complete device graph.
@@ -183,15 +175,6 @@ def build_graph(
     """
     # Load data
     fda_devices = load_fda_data(fda_data_path)
-    if use_db_format:
-        predicates = load_predicates_from_db(predicates_path)
-    else:
-        predicates = load_predicates(predicates_path)
-    contacts = load_contacts(contacts_path) if contacts_path else {}
-    company_mappings = (
-        load_company_mappings(company_mappings_path) if company_mappings_path else {}
-    )
-
     print("Building graph...")
 
     nodes: dict[str, DeviceNode] = {}
@@ -200,8 +183,7 @@ def build_graph(
 
     # Build nodes
     for k_num, device in fda_devices.items():
-        contact = contacts.get(k_num)
-        nodes[k_num] = extract_device_node(device, contact, company_mappings)
+        nodes[k_num] = extract_device_node(device)
 
     # Build edges
     for source, targets in predicates.items():
@@ -294,15 +276,16 @@ def main():
         CYTOSCAPE_PATH,
         FDA_JSON_PATH,
         GRAPH_PATH,
-        PREDICATES_PATH,
+        get_predicates,
     )
+
+    raw_predicates = get_predicates()
+
+    predicates = {k: v["predicates"] for k, v in raw_predicates.items()}
 
     graph = build_graph(
         FDA_JSON_PATH,
-        PREDICATES_PATH,  # Use predicates.json (simple format)
-        CONTACTS_PATH,
-        None,
-        use_db_format=False,
+        predicates,
     )
     export_graph(graph, GRAPH_PATH)
     export_cytoscape(graph, CYTOSCAPE_PATH)

@@ -27,6 +27,42 @@ The core data pipeline is:
 
 The frontend exposes this data as a graph and lets you explore the device tree.
 
+
+## Running the data pipeline
+
+These assume PDF files are located in `pdfs` and text files are located in `device_text`.
+
+
+```bash
+# Copy down existing data files
+gsutil -m rsync gs://devtree/pdfs pdfs
+gsutil -m rsync gs://devtree/data/*.json
+
+# Download new PDFS
+uv run code/pipeline/download.py
+
+# Extract text from the PDFs
+uv run code/pipeline/textify.py
+
+# Extract predicates from the text using regex + pymupdf
+uv run code/pipeline/extract.py
+
+# Optional: Use claude code / other tooling to extract predicates for additional devices
+claude "Please identify interesting predicates and extract their predicates"
+
+# Build graph
+uv run code/pipeline/graph.py
+
+
+# Sync back up to GCS
+gsutil -m rsync pdfs gs://devtree/pdfs
+
+for file in data/predicates_*.json; do
+    gsutil rsync $file gs://devtree/data/
+done
+```
+
+
 ## Running the Frontend (Development)
 
 Requires Node.js 20+. If using nvm:
