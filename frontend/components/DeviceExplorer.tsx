@@ -208,28 +208,17 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
   }
 
   return (
-    <main className="min-h-screen p-2 md:p-4">
+    <main className="min-h-screen p-2 md:p-4 pt-0">
       <div className="w-full">
-        {/* Header - compact on mobile */}
-        <header className="mb-2 md:mb-6">
-          <h1
-            className="flex items-center gap-2 md:gap-3 text-lg md:text-3xl font-bold text-white mb-1 cursor-pointer hover:text-blue-400 transition-colors"
-            onClick={handleClearFocus}
-          >
-            <img src={`${basePath}/devtree.png`} alt="DevTree" className="h-6 md:h-10 w-auto" />
-            DevTree
-          </h1>
-          <p className="text-gray-400 text-xs md:text-base hidden md:block">
-            Explore FDA 510(k) medical device clearances and their predicate relationships.{" "}
-            {data && (
-              <span className="text-gray-500">
-                {data.metadata.total_nodes.toLocaleString()} devices,{" "}
-                {data.metadata.total_edges.toLocaleString()} relationships.
-              </span>
-            )}
-          </p>
-        </header>
-
+        <p className="text-gray-400 text-xs md:text-sm mb-2 md:mb-4">
+          Explore FDA 510(k) medical device clearances and their predicate relationships.{" "}
+          {data && (
+            <span className="text-gray-500">
+              {data.metadata.total_nodes.toLocaleString()} devices,{" "}
+              {data.metadata.total_edges.toLocaleString()} relationships.
+            </span>
+          )}
+        </p>
         <SearchBar
           searchResults={searchResults}
           companyResults={companyResults}
