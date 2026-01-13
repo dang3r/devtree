@@ -42,7 +42,7 @@ export default function ProcessOverview() {
           <p className="text-gray-300 mb-4">
             The FDA publishes 510(k) device summaries on their{' '}
             <a
-              href="https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpub/applica.cfm"
+              href="https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpmn/pmn.cfm"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300 underline"
@@ -82,8 +82,8 @@ export default function ProcessOverview() {
               </h3>
               <p className="text-gray-400 text-sm">
                 For each 510(k) device in the openFDA dataset, download the corresponding PDF summary
-                from the FDA website. The system tracks which PDFs have been downloaded and respects
-                FDA rate limits.
+                from the FDA website. The system tracks which PDFs have been downloaded  to reduce
+                redundant downloads.
               </p>
             </div>
 
@@ -189,7 +189,7 @@ export default function ProcessOverview() {
                 <li>uv package manager</li>
                 <li>PyMuPDF for PDF processing</li>
                 <li>Pydantic for data validation</li>
-                <li>Regex + AI for extraction</li>
+                <li>Ollama + Claude Code</li>
               </ul>
             </div>
             <div className="bg-gray-800 rounded-lg p-4">
