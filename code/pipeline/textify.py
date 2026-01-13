@@ -1,4 +1,5 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -29,18 +30,8 @@ def extract_text_from_pdf(pdf_path: Path) -> tuple[str, int]:
     return text, pdf.page_count
 
 
-def extract_text(device_id: str, device: DeviceEntry) -> TextifyResult | None:
+def extract_text(device_id: str) -> TextifyResult | None:
     try:
-        if not device.pdf.exists:
-            return TextifyResult(
-                device_id=device_id,
-                pdf_chars=0,
-                pdf_pages=0,
-                pdf_char_density=0.0,
-                pdf_quality="",
-                error="No PDF",
-            )
-
         pdf_path = PDF_PATH / f"{device_id}.pdf"
         if not pdf_path.exists():
             return TextifyResult(
@@ -51,10 +42,6 @@ def extract_text(device_id: str, device: DeviceEntry) -> TextifyResult | None:
                 pdf_quality="",
                 error="PDF file missing",
             )
-
-        # Skip if already extracted with a non-pymupdf method
-        if device.text.extracted and device.text.method != "pymupdf":
-            return None
 
         text, pdf_pages = extract_text_from_pdf(pdf_path)
         pdf_chars = len(text)
@@ -85,13 +72,10 @@ def extract_text(device_id: str, device: DeviceEntry) -> TextifyResult | None:
 
 
 def extract_text_from_pdfs(
-    device_entries: list[tuple[str, DeviceEntry]],
+    device_ids: list[str],
 ) -> list[TextifyResult | None]:
     with ProcessPoolExecutor() as executor:
-        futures = [
-            executor.submit(extract_text, device_id, device)
-            for device_id, device in device_entries
-        ]
+        futures = [executor.submit(extract_text, device_id) for device_id in device_ids]
         return [
             future.result()
             for future in tqdm.tqdm(as_completed(futures), total=len(futures))
@@ -99,23 +83,18 @@ def extract_text_from_pdfs(
 
 
 def main():
-    db = get_db()
-    device_entries = [(device_id, device) for device_id, device in db.devices.items()]
-    results = extract_text_from_pdfs(device_entries)
+    """Script for extracting text from PDFs.
 
+    Extract text from PDFs for devices that we do not have text for and are not special cases(text extracted with a different method).
+    """
+
+    pdf_device_ids = [p.stem for p in PDF_PATH.glob("*.pdf")]
+    special_cases = json.load(open("data/text.json"))["special_cases"]
+    pdf_device_ids = set(pdf_device_ids) - set(special_cases)
+
+    results = extract_text_from_pdfs(list(pdf_device_ids))
     for result in results:
-        if result is None:
-            continue
-        entry = db.devices[result.device_id]
-        entry.pdf.chars = result.pdf_chars
-        entry.pdf.pages = result.pdf_pages
-        entry.pdf.density = result.pdf_char_density
-        entry.pdf.quality = result.pdf_quality
-        if result.text_method:
-            entry.text.extracted = True
-            entry.text.method = result.text_method
-
-    save_db(db)
+        pass
 
 
 if __name__ == "__main__":

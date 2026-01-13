@@ -15,7 +15,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from lib import FDA_JSON_PATH, DeviceEntry, get_db, save_db
+from lib import FDA_JSON_PATH, PDF_DATA_PATH
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38"}
 MAX_CONCURRENT = 3
@@ -183,49 +183,43 @@ def device_ids_without_pdfs(pdf_path: Path, fda_json_path: Path) -> list[str]:
 
 
 def main():
-    db = get_db()
+    """Script for downloading PDFs for medical devices.
+
+    Identify devices without local PDFs and download them. Only download devices
+    that we no do not have a summary (be a good citizen and don't overwhelm the FDA).
+    """
+
     fda_data = json.load(open(FDA_JSON_PATH))
     fda_device_ids = [d["k_number"] for d in fda_data["results"]]
 
-    # Add any FDA devices not in DB
-    for device_id in fda_device_ids:
-        if device_id not in db.devices:
-            db.devices[device_id] = DeviceEntry()
-    save_db(db)
+    pdf_data = json.load(open(PDF_DATA_PATH))
+    skip_device_ids = pdf_data["no_summary"]
 
-    # Find devices that haven't been checked for PDFs yet
-    db = get_db()
-    to_download = [
-<<<<<<< HEAD
-        (did, entry) for did, entry in db.devices.items() if entry.pdf.exists is None
-=======
-        (did, entry)
-        for did, entry in db.devices.items()
-        if entry.pdf.exists is None and did.startswith("K959")
->>>>>>> master
-    ]
+    existing_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
 
+    to_download = set(fda_device_ids) - set(skip_device_ids) - set(existing_pdfs)
+
+    # filter for devices starting with K12
+    to_download = [did for did in to_download if did.startswith("K90")]
+
+    print("Found", len(to_download), "devices to download")
+
+    # Only use 10 devices
     print("Attempting download of", len(to_download), "devices")
     input("Press Enter to continue...")
 
     summary = download_pdfs(
-        [did for did, _ in to_download],
+        [did for did in to_download],
         Path(__file__).parent.parent.parent / "pdfs",
     )
 
-    # Update DB with results
+    # Save results
     for result in summary.results:
-        entry = db.devices[result.device_id]
-        if result.status == "success" or result.status == "skipped":
-            entry.pdf.exists = True
-            entry.pdf.downloaded = True
-        elif result.status == "not_found":
-            entry.pdf.exists = False
-            entry.pdf.downloaded = False
-        else:
-            entry.pdf.exists = None
-            entry.pdf.downloaded = False
-    save_db(db)
+        if result.status == "not_found":
+            pdf_data["no_summary"].append(result.device_id)
+    with open(PDF_DATA_PATH, "w") as f:
+        pdf_data["no_summary"].sort()
+        json.dump(pdf_data, f, indent=2, default=str)
 
 
 if __name__ == "__main__":

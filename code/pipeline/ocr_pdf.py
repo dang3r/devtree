@@ -4,6 +4,7 @@
 import base64
 import io
 import re
+import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -61,12 +62,12 @@ def ocr_image_with_ollama(
 
 def ocr_pdf(
     device_id: str,
+    output_path: Path,
     model: str = "gemma3",
     dpi: int = 100,
 ) -> OcrOllamaResult:
     """OCR all pages of a PDF with parallel processing."""
     pdf_path = PDF_PATH / f"{device_id}.pdf"
-    output_path = TEXT_PATH / f"{device_id}.txt"
     method = f"ollama_{model}_{dpi}"
 
     try:
@@ -102,45 +103,11 @@ def main():
     model = "ministral-3:3b"
     max_concurrent = 1
 
-    db = get_db()
-
-    # Find devices with PDFs that mention "predicate" but have no predicates extracted
-    device_ids_to_ocr = []
-    for device_id, entry in db.devices.items():
-        if not entry.preds.values and entry.pdf.exists and device_id.startswith("K99"):
-            txt_path = TEXT_PATH / f"{device_id}.txt"
-            if not txt_path.exists():
-                continue
-            text = txt_path.read_text()
-            predicates = re.findall("predicate", text, re.IGNORECASE)
-            if len(predicates) > 1:
-                device_ids_to_ocr.append(device_id)
-
-    print(f"Found {len(device_ids_to_ocr)} devices to OCR")
-    input("Press Enter to continue")
-
-    with ProcessPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = {
-            executor.submit(ocr_pdf, device_id, model, dpi): device_id
-            for device_id in device_ids_to_ocr
-        }
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="OCRing PDFs"
-        ):
-            try:
-                result = future.result()
-                if result.error:
-                    tqdm.write(f"Error OCRing {result.device_id}: {result.error}")
-                else:
-                    # Update DB with extraction method
-                    entry = db.devices[result.device_id]
-                    entry.text.extracted = True
-                    entry.text.method = result.method
-                    tqdm.write(f"OCRed {result.device_id} to {result.output_path}")
-            except Exception:
-                traceback.print_exc()
-
-    save_db(db)
+    device_id = sys.argv[1]
+    output_path = Path("tmptext") / f"{device_id}.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result = ocr_pdf(device_id, output_path, model, dpi)
+    print(result)
 
 
 if __name__ == "__main__":
