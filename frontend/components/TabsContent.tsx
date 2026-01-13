@@ -6,6 +6,7 @@ import DeviceExplorer from "@/components/DeviceExplorer";
 import TabNavigation, { Tab } from "@/components/TabNavigation";
 import ProcessOverview from "@/components/ProcessOverview";
 import Research from "@/components/Research";
+import Contact from "@/components/Contact";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -17,7 +18,7 @@ export default function TabsContent() {
   // Initialize tab from URL on mount
   useEffect(() => {
     const tabParam = searchParams?.get('tab');
-    if (tabParam && ['explorer', 'process', 'research'].includes(tabParam)) {
+    if (tabParam && ['contact', 'explorer', 'process', 'research'].includes(tabParam)) {
       setActiveTab(tabParam as Tab);
     }
   }, [searchParams]);
@@ -52,6 +53,7 @@ export default function TabsContent() {
         </div>
       </header>
       <div className="flex-1 overflow-auto">
+        {activeTab === 'contact' && <Contact />}
         {activeTab === 'explorer' && <DeviceExplorer />}
         {activeTab === 'process' && <ProcessOverview />}
         {activeTab === 'research' && <Research />}

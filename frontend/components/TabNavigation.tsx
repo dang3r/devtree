@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export type Tab = 'explorer' | 'process' | 'research';
+export type Tab = 'contact' | 'explorer' | 'process' | 'research';
 
 interface TabNavigationProps {
   activeTab: Tab;
@@ -12,8 +12,9 @@ interface TabNavigationProps {
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   const tabs: { id: Tab; label: string; color: string; activeColor: string }[] = [
     { id: 'explorer', label: 'Explorer', color: 'text-gray-400 hover:text-blue-400', activeColor: 'text-blue-400' },
-    { id: 'process', label: 'Process', color: 'text-gray-400 hover:text-green-400', activeColor: 'text-green-400' },
+    { id: 'process', label: 'Background', color: 'text-gray-400 hover:text-green-400', activeColor: 'text-green-400' },
     { id: 'research', label: 'Research', color: 'text-gray-400 hover:text-purple-400', activeColor: 'text-purple-400' },
+    { id: 'contact', label: 'Contact', color: 'text-gray-400 hover:text-orange-400', activeColor: 'text-orange-400' },
   ];
 
   return (
