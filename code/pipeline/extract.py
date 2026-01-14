@@ -4,6 +4,7 @@ import pathlib
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import requests
 import tqdm
 from pydantic import BaseModel
 
@@ -33,16 +34,54 @@ def extract_k_numbers(text: str) -> list[str]:
     return list(set(matches))
 
 
-def extract_predicates_from_text_single(
+def extract_predicates_from_text_ollama(
+    device_id: str, text_path: pathlib.Path
+) -> ExtractionResult | None:
+    if device_id.startswith("DEN") or not text_path.exists():
+        return None
+    text = text_path.read_text()
+    payload = {
+        "model": "ministral-3:3b",
+        "prompt": f"Identify the predicate device ids for these device submissions. Predicates are ONLY identified by K123456 or DEN123456. Only return the predicate device ids, and not any references to other devices.\n\n```text\n{text}```",
+        "stream": False,
+        "options": {"temperature": 0.0},
+        "format": {
+            "type": "object",
+            "properties": {
+                "predicates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                    },
+                },
+            },
+        },
+    }
+    try:
+        response = requests.post(
+            f"http://localhost:11434/api/generate", json=payload, timeout=120
+        )
+        data = json.loads(response.json()["response"])
+        print(data)
+        response.raise_for_status()
+        print(
+            "Extracted predicates from text with Ollama",
+            device_id,
+            data.get("predicates", []),
+        )
+        return ExtractionResult(
+            device_id=device_id,
+            predicates=data.get("predicates", []),
+        )
+    except Exception as e:
+        return ExtractionResult(device_id=device_id, predicates=[], error=str(e))
+
+
+def extract_predicates_from_text_regex(
     device_id: str, text_path: pathlib.Path
 ) -> ExtractionResult | None:
     try:
-        # Skip DEN devices (De Novo, don't have predicates)
-        if device_id.startswith("DEN"):
-            return None
-
-        # Read plain .txt file
-        if not text_path.exists():
+        if device_id.startswith("DEN") or not text_path.exists():
             return None
 
         text = text_path.read_text()
@@ -50,6 +89,7 @@ def extract_predicates_from_text_single(
         predicates = [k.upper() for k in predicates]
         predicates = [k for k in predicates if k != device_id]
 
+        print("Extracted predicates from text with Regex", device_id, predicates)
         return ExtractionResult(
             device_id=device_id,
             predicates=predicates,

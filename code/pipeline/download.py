@@ -158,7 +158,9 @@ async def download_pdfs_async(
         return DownloadSummary(
             total=len(device_ids),
             success=sum(1 for r in results if r.status == "success"),
-            failed=sum(1 for r in results if r.status == "failed"),
+            failed=sum(
+                1 for r in results if r.status == "failed" or r.status == "not_found"
+            ),
             skipped=sum(1 for r in results if r.status == "skipped"),
             results=results,
         )

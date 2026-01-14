@@ -7,7 +7,7 @@ import fitz
 import tqdm
 from pydantic import BaseModel
 
-from lib import PDF_PATH, TEXT_PATH, DeviceEntry, get_db, save_db
+from lib import PDF_PATH, TEXT_PATH, RAWTEXT_PATH
 
 
 class TextifyResult(BaseModel):
@@ -43,12 +43,21 @@ def extract_text(device_id: str) -> TextifyResult | None:
                 error="PDF file missing",
             )
 
+        if RAWTEXT_PATH / f"{device_id}.txt".exists():
+            return TextifyResult(
+                device_id=device_id,
+                pdf_chars=0,
+                pdf_pages=0,
+                pdf_char_density=0.0,
+                pdf_quality="",
+                error="Text already exists",
+            )
+
         text, pdf_pages = extract_text_from_pdf(pdf_path)
         pdf_chars = len(text)
         pdf_char_density = pdf_chars / pdf_pages if pdf_pages > 0 else 0.0
         pdf_quality = "rich" if pdf_char_density > 100 else "sparse"
 
-        # Save as plain .txt file
         dst_path = RAWTEXT_PATH / f"{device_id}.txt"
         dst_path.write_text(text)
 

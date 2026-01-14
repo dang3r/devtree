@@ -13,7 +13,8 @@
     "code/**": false,
     "frontend/app/**": false,
     "frontend/lib/**": false,
-    "frontend/components/**": false
+    "frontend/components/**": false,
+    ".md": false
   },
   "files.watcherExclude": {
     "**/.git/objects/**": true,
