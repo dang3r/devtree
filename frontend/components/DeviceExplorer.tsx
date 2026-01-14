@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import type { CytoscapeGraphData, Device, CytoscapeNode } from "@/types/device";
 import { searchDevices, extractSubgraph, searchCompanies, extractCompanySubgraph, getCompanyDeviceCount } from "@/lib/graph-utils";
@@ -26,6 +27,8 @@ interface DeviceExplorerProps {
 }
 
 export default function DeviceExplorer({ initialDeviceId = null, initialCompanyName = null }: DeviceExplorerProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<CytoscapeGraphData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,21 +43,14 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
   const [companyViewMode, setCompanyViewMode] = useState<"company-only" | "with-predicates">("company-only");
   const [showMobilePanel, setShowMobilePanel] = useState(false);
 
-  // Parse URL for SPA fallback (when 404.html serves deep links)
+  // Initialize from props
   useEffect(() => {
-    if (initialDeviceId || initialCompanyName) return; // props take precedence
-
-    const path = window.location.pathname.replace(basePath, "").replace(/\/$/, "");
-    const deviceMatch = path.match(/^\/device\/([^/]+)/);
-    const companyMatch = path.match(/^\/company\/([^/]+)/);
-
-    if (deviceMatch) {
-      const deviceId = decodeURIComponent(deviceMatch[1]);
-      setFocusedDeviceId(deviceId);
-      setSelectedNodeId(deviceId);
-    } else if (companyMatch) {
-      const companyName = decodeURIComponent(companyMatch[1]);
-      setFocusedCompanyName(companyName);
+    if (initialDeviceId) {
+      setFocusedDeviceId(initialDeviceId);
+      setSelectedNodeId(initialDeviceId);
+    }
+    if (initialCompanyName) {
+      setFocusedCompanyName(initialCompanyName);
     }
   }, [initialDeviceId, initialCompanyName]);
 
@@ -132,18 +128,24 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    // Update URL without navigation
-    window.history.pushState(null, "", `/device/${deviceId}`);
-  }, []);
+    // Preserve tab parameter if present
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const tabParam = params.get('tab');
+    const queryString = tabParam ? `?tab=${tabParam}` : '';
+    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
+  }, [router, searchParams]);
 
   const handleCompanySelect = useCallback((companyName: string) => {
     setFocusedCompanyName(companyName);
     setFocusedDeviceId(null);
     setSelectedNodeId(null);
     setHighlightMode("none");
-    // Update URL without navigation
-    window.history.pushState(null, "", `/company/${encodeURIComponent(companyName)}`);
-  }, []);
+    // Preserve tab parameter if present
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const tabParam = params.get('tab');
+    const queryString = tabParam ? `?tab=${tabParam}` : '';
+    router.push(`/company/${encodeURIComponent(companyName)}${queryString}`, { scroll: false });
+  }, [router, searchParams]);
 
   const handleNodeSelect = useCallback((nodeId: string | null) => {
     setSelectedNodeId(nodeId);
@@ -169,9 +171,12 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(null);
     setHighlightMode("none");
-    // Update URL without navigation
-    window.history.pushState(null, "", "/");
-  }, []);
+    // Preserve tab parameter if present
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const tabParam = params.get('tab');
+    const queryString = tabParam ? `?tab=${tabParam}` : '';
+    router.push(`/${queryString}`, { scroll: false });
+  }, [router, searchParams]);
 
   // Navigate to a device from the panel
   const handleNavigateToDevice = useCallback((deviceId: string) => {
@@ -179,9 +184,12 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    // Update URL without navigation
-    window.history.pushState(null, "", `/device/${deviceId}`);
-  }, []);
+    // Preserve tab parameter if present
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const tabParam = params.get('tab');
+    const queryString = tabParam ? `?tab=${tabParam}` : '';
+    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
+  }, [router, searchParams]);
 
   // Select a random device
   const handleRandomDevice = useCallback(() => {
@@ -193,8 +201,12 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    window.history.pushState(null, "", `/device/${deviceId}`);
-  }, [data]);
+    // Preserve tab parameter if present
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    const tabParam = params.get('tab');
+    const queryString = tabParam ? `?tab=${tabParam}` : '';
+    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
+  }, [data, router, searchParams]);
 
   if (error) {
     return (

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect, use } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import DeviceExplorer from "@/components/DeviceExplorer";
 import TabNavigation, { Tab } from "@/components/TabNavigation";
 import ProcessOverview from "@/components/ProcessOverview";
@@ -12,8 +12,31 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export default function TabsContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>('explorer');
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+
+  // Parse URL path to extract device or company info (for static site / 404 fallback)
+  useEffect(() => {
+    const path = pathname.replace(basePath, "").replace(/\/$/, "");
+    const deviceMatch = path.match(/^\/device\/([^/?]+)/);
+    const companyMatch = path.match(/^\/company\/([^/?]+)/);
+
+    if (deviceMatch) {
+      const id = decodeURIComponent(deviceMatch[1]);
+      setDeviceId(id);
+      setCompanyName(null);
+    } else if (companyMatch) {
+      const name = decodeURIComponent(companyMatch[1]);
+      setCompanyName(name);
+      setDeviceId(null);
+    } else {
+      setDeviceId(null);
+      setCompanyName(null);
+    }
+  }, [pathname]);
 
   // Initialize tab from URL on mount
   useEffect(() => {
@@ -26,10 +49,10 @@ export default function TabsContent() {
   // Update URL when tab changes
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
-    // Update URL without full page reload
+    // Update URL without full page reload, preserving current path
     const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('tab', tab);
-    router.push(`?${params.toString()}`, { scroll: false });
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const handleLogoClick = () => {
@@ -54,7 +77,7 @@ export default function TabsContent() {
       </header>
       <div className="flex-1 overflow-auto">
         {activeTab === 'contact' && <Contact />}
-        {activeTab === 'explorer' && <DeviceExplorer />}
+        {activeTab === 'explorer' && <DeviceExplorer initialDeviceId={deviceId} initialCompanyName={companyName} />}
         {activeTab === 'process' && <ProcessOverview />}
         {activeTab === 'research' && <Research />}
       </div>
