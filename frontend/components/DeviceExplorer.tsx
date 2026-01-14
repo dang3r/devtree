@@ -1,37 +1,35 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
 import type { CytoscapeGraphData, Device, CytoscapeNode } from "@/types/device";
 import { searchDevices, extractSubgraph, searchCompanies, extractCompanySubgraph, getCompanyDeviceCount } from "@/lib/graph-utils";
 import type { CompanySearchResult } from "@/lib/graph-utils";
 import SearchBar from "@/components/SearchBar";
 import DevicePanel from "@/components/DevicePanel";
+import DeviceGraph from "@/components/DeviceGraph";
 
-const DeviceGraph = dynamic(() => import("@/components/DeviceGraph"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full bg-gray-900 rounded-lg flex items-center justify-center">
-      <p className="text-gray-400">Loading graph component...</p>
-    </div>
-  ),
-});
-
-// BasePath for GitHub Pages deployment
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 interface DeviceExplorerProps {
   initialDeviceId?: string | null;
   initialCompanyName?: string | null;
+  graphData: CytoscapeGraphData | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
-export default function DeviceExplorer({ initialDeviceId = null, initialCompanyName = null }: DeviceExplorerProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [data, setData] = useState<CytoscapeGraphData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Update URL without triggering navigation (for SPA static export)
+function updateUrl(path: string) {
+  window.history.pushState({}, '', path);
+}
+
+export default function DeviceExplorer({
+  initialDeviceId = null,
+  initialCompanyName = null,
+  graphData: data,
+  isLoading,
+  error,
+}: DeviceExplorerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [focusedDeviceId, setFocusedDeviceId] = useState<string | null>(initialDeviceId);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialDeviceId);
@@ -53,26 +51,6 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
       setFocusedCompanyName(initialCompanyName);
     }
   }, [initialDeviceId, initialCompanyName]);
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setIsLoading(true);
-        const response = await fetch(`${basePath}/cytoscape_graph.json`);
-        if (!response.ok) {
-          throw new Error(`Failed to load graph data: ${response.status}`);
-        }
-        const graphData = await response.json();
-        setData(graphData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load data");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    loadData();
-  }, []);
 
   // Search results from the full graph
   const searchResults = useMemo((): CytoscapeNode[] => {
@@ -128,24 +106,16 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    // Preserve tab parameter if present
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    const tabParam = params.get('tab');
-    const queryString = tabParam ? `?tab=${tabParam}` : '';
-    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
-  }, [router, searchParams]);
+    updateUrl(`/device/${deviceId}/`);
+  }, []);
 
   const handleCompanySelect = useCallback((companyName: string) => {
     setFocusedCompanyName(companyName);
     setFocusedDeviceId(null);
     setSelectedNodeId(null);
     setHighlightMode("none");
-    // Preserve tab parameter if present
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    const tabParam = params.get('tab');
-    const queryString = tabParam ? `?tab=${tabParam}` : '';
-    router.push(`/company/${encodeURIComponent(companyName)}${queryString}`, { scroll: false });
-  }, [router, searchParams]);
+    updateUrl(`/company/${encodeURIComponent(companyName)}/`);
+  }, []);
 
   const handleNodeSelect = useCallback((nodeId: string | null) => {
     setSelectedNodeId(nodeId);
@@ -171,12 +141,8 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(null);
     setHighlightMode("none");
-    // Preserve tab parameter if present
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    const tabParam = params.get('tab');
-    const queryString = tabParam ? `?tab=${tabParam}` : '';
-    router.push(`/${queryString}`, { scroll: false });
-  }, [router, searchParams]);
+    updateUrl('/');
+  }, []);
 
   // Navigate to a device from the panel
   const handleNavigateToDevice = useCallback((deviceId: string) => {
@@ -184,12 +150,8 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    // Preserve tab parameter if present
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    const tabParam = params.get('tab');
-    const queryString = tabParam ? `?tab=${tabParam}` : '';
-    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
-  }, [router, searchParams]);
+    updateUrl(`/device/${deviceId}/`);
+  }, []);
 
   // Select a random device
   const handleRandomDevice = useCallback(() => {
@@ -201,12 +163,8 @@ export default function DeviceExplorer({ initialDeviceId = null, initialCompanyN
     setFocusedCompanyName(null);
     setSelectedNodeId(deviceId);
     setHighlightMode("none");
-    // Preserve tab parameter if present
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    const tabParam = params.get('tab');
-    const queryString = tabParam ? `?tab=${tabParam}` : '';
-    router.push(`/device/${deviceId}${queryString}`, { scroll: false });
-  }, [data, router, searchParams]);
+    updateUrl(`/device/${deviceId}/`);
+  }, [data]);
 
   if (error) {
     return (

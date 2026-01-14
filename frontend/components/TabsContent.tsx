@@ -1,63 +1,135 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import DeviceExplorer from "@/components/DeviceExplorer";
 import TabNavigation, { Tab } from "@/components/TabNavigation";
 import ProcessOverview from "@/components/ProcessOverview";
 import Research from "@/components/Research";
 import Contact from "@/components/Contact";
+import type { CytoscapeGraphData } from "@/types/device";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+const dataUrl = process.env.NEXT_PUBLIC_DATA_URL || `${basePath}/cytoscape_graph.json`;
+
+// Map URL paths to tabs
+const pathToTab: Record<string, Tab> = {
+  '/background': 'process',
+  '/research': 'research',
+  '/contact': 'contact',
+};
+
+// Map tabs to URL paths
+const tabToPath: Record<Tab, string> = {
+  'explorer': '/',
+  'process': '/background/',
+  'research': '/research/',
+  'contact': '/contact/',
+};
+
+// Parse URL and return tab, deviceId, companyName
+function parseUrl(path: string): { tab: Tab; deviceId: string | null; companyName: string | null } {
+  const normalizedPath = path.replace(basePath, "").replace(/\/$/, "") || "/";
+
+  // Check for tab routes first
+  const matchedTab = pathToTab[normalizedPath];
+  if (matchedTab) {
+    return { tab: matchedTab, deviceId: null, companyName: null };
+  }
+
+  // Check for device/company routes (explorer tab)
+  const deviceMatch = normalizedPath.match(/^\/device\/([^/?]+)/);
+  const companyMatch = normalizedPath.match(/^\/company\/([^/?]+)/);
+
+  if (deviceMatch) {
+    return { tab: 'explorer', deviceId: decodeURIComponent(deviceMatch[1]), companyName: null };
+  } else if (companyMatch) {
+    return { tab: 'explorer', deviceId: null, companyName: decodeURIComponent(companyMatch[1]) };
+  }
+
+  return { tab: 'explorer', deviceId: null, companyName: null };
+}
+
+// Get initial state from URL (runs on client only)
+function getInitialState() {
+  if (typeof window === 'undefined') {
+    return { tab: 'explorer' as Tab, deviceId: null, companyName: null };
+  }
+  return parseUrl(window.location.pathname);
+}
+
+// Update URL without triggering navigation (for SPA static export)
+function updateUrl(path: string) {
+  window.history.pushState({}, '', path);
+}
 
 export default function TabsContent() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<Tab>('explorer');
-  const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState<string | null>(null);
+  // Track if we're mounted on the client
+  const [mounted, setMounted] = useState(false);
 
-  // Parse URL path to extract device or company info (for static site / 404 fallback)
+  // Single state object to avoid multiple re-renders
+  const [state, setState] = useState(getInitialState);
+  const { tab: activeTab, deviceId, companyName } = state;
+
+  // Graph data - loaded once and shared across all DeviceExplorer renders
+  const [graphData, setGraphData] = useState<CytoscapeGraphData | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [graphError, setGraphError] = useState<string | null>(null);
+
+  // Set mounted and correct state on client
   useEffect(() => {
-    const path = pathname.replace(basePath, "").replace(/\/$/, "");
-    const deviceMatch = path.match(/^\/device\/([^/?]+)/);
-    const companyMatch = path.match(/^\/company\/([^/?]+)/);
+    setState(parseUrl(window.location.pathname));
+    setMounted(true);
+  }, []);
 
-    if (deviceMatch) {
-      const id = decodeURIComponent(deviceMatch[1]);
-      setDeviceId(id);
-      setCompanyName(null);
-    } else if (companyMatch) {
-      const name = decodeURIComponent(companyMatch[1]);
-      setCompanyName(name);
-      setDeviceId(null);
-    } else {
-      setDeviceId(null);
-      setCompanyName(null);
-    }
-  }, [pathname]);
-
-  // Initialize tab from URL on mount
+  // Load graph data once on mount
   useEffect(() => {
-    const tabParam = searchParams?.get('tab');
-    if (tabParam && ['contact', 'explorer', 'process', 'research'].includes(tabParam)) {
-      setActiveTab(tabParam as Tab);
+    async function loadGraphData() {
+      try {
+        setGraphLoading(true);
+        const response = await fetch(dataUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to load graph data: ${response.status}`);
+        }
+        const data = await response.json();
+        setGraphData(data);
+      } catch (err) {
+        setGraphError(err instanceof Error ? err.message : "Failed to load data");
+      } finally {
+        setGraphLoading(false);
+      }
     }
-  }, [searchParams]);
+    loadGraphData();
+  }, []);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const newState = parseUrl(window.location.pathname);
+      setState(newState);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Don't render until mounted to avoid hydration mismatch flash
+  if (!mounted) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <p className="text-gray-400">Loading...</p>
+      </div>
+    );
+  }
 
   // Update URL when tab changes
   const handleTabChange = (tab: Tab) => {
-    setActiveTab(tab);
-    // Update URL without full page reload, preserving current path
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    params.set('tab', tab);
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    setState({ tab, deviceId: null, companyName: null });
+    updateUrl(tabToPath[tab]);
   };
 
   const handleLogoClick = () => {
-    setActiveTab('explorer');
-    router.push('/', { scroll: false });
+    setState({ tab: 'explorer', deviceId: null, companyName: null });
+    updateUrl('/');
   };
 
   return (
@@ -77,7 +149,15 @@ export default function TabsContent() {
       </header>
       <div className="flex-1 overflow-auto">
         {activeTab === 'contact' && <Contact />}
-        {activeTab === 'explorer' && <DeviceExplorer initialDeviceId={deviceId} initialCompanyName={companyName} />}
+        {activeTab === 'explorer' && (
+          <DeviceExplorer
+            initialDeviceId={deviceId}
+            initialCompanyName={companyName}
+            graphData={graphData}
+            isLoading={graphLoading}
+            error={graphError}
+          />
+        )}
         {activeTab === 'process' && <ProcessOverview />}
         {activeTab === 'research' && <Research />}
       </div>
