@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
+import TabsContent from "@/components/TabsContent";
 
 export const metadata: Metadata = {
   title: "DevTree - Medical Device Explorer",
@@ -16,7 +18,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <Suspense fallback={
+          <div className="flex h-screen items-center justify-center bg-gray-950">
+            <p className="text-gray-400">Loading...</p>
+          </div>
+        }>
+          <TabsContent />
+        </Suspense>
+      </body>
     </html>
   );
 }
