@@ -20,3 +20,5 @@ text/
 node_modules
 .next
 out
+*.json.gz
+*.gz
