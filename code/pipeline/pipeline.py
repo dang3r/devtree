@@ -9,7 +9,7 @@ A pipeline that:
 """
 
 from collections import defaultdict
-import io
+from functools import partial
 import json
 import pathlib
 import random
@@ -21,35 +21,26 @@ from concurrent.futures import (
     as_completed,
 )
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Callable, TypeVar
 
-import requests
-import zipfile
 from pydantic import BaseModel
 
-from extract import ExtractionResult
+from extract import ExtractionResult, PREDICATE_EXTRACTORS
+from aggregate import aggregate_predicates, load_existing_predicates
 from lib import (
-    DATA_PATH,
-    PREDICATES_CLAUDECODE_PATH,
     RAWTEXT_PATH,
     TESSERACT_TEXT_PATH,
     MINISTRAL3_3B_PATH,
     PDF_PATH,
 )
-from download import download_pdf_sync
-from textify import extract_text
-from textify_tesseract import extract_text as extract_text_tesseract
-from ocr_pdf import ocr_pdf
+from download import download_pdf_sync, new_fda_devices
+from textify import TEXT_EXTRACTORS
+from graph import build_all_graphs
 import argparse
 
 
 T = TypeVar("T")
-
-
-FDA_JSON_URL = (
-    "https://download.open.fda.gov/device/510k/device-510k-0001-of-0001.json.zip"
-)
 
 
 class StageResult(BaseModel):
@@ -140,150 +131,17 @@ def run_stage(
     return stage_result
 
 
-EXTRACTION_PRIORITY = {
-    ("human", "raw"): -1,
-    ("claude_code", "raw"): 0,
-    ("ministral3b_3b", "ministral"): 1,
-    ("ministral3b_3b", "tesseract"): 2,
-    ("ministral3b_3b", "raw"): 3,
-    ("regex", "ministral"): 4,
-    ("regex", "tesseract"): 5,
-    ("regex", "raw"): 6,
-}
-NEW_EXTRACTION_PRIORITY = {
-    "human_raw": 0,
-    "claude_code_raw": 1,
-    "ollama_ministral-3:3b_ministral": 2,
-    "ollama_ministral-3:3b_tesseract": 4,
-    "ollama_ministral-3:3b_pymupdf": 3,
-    "regex_ministral": 6,
-    "regex_tesseract": 8,
-    "regex_pymupdf": 7,
-}
-
-
-def aggregate_predicates(extract_results: list[ExtractionResult]) -> dict[str, dict]:
-    by_device: dict[str, list[tuple[int, Any]]] = {}
-
-    for _input, extract_result in extract_results:
-        if extract_result and not extract_result.error:
-            key = extract_result.type
-            priority = NEW_EXTRACTION_PRIORITY.get(key, 99)
-            if extract_result.device_id not in by_device:
-                by_device[extract_result.device_id] = []
-            by_device[extract_result.device_id].append((priority, extract_result))
-
-    aggregated = {}
-    for device_id, entries in by_device.items():
-        best = min(entries, key=lambda x: x[0])[1]
-        aggregated[device_id] = {
-            "predicates": best.predicates,
-            "method": best.method,
-            "source": best.source,
-            "type": best.type,
-        }
-
-    # ensure dict keys are sorted by device_id
-    aggregated = dict(sorted(aggregated.items(), key=lambda x: x[0]))
-    return aggregated
-
-
 # ---------------------------------------------------------------------------
 # Picklable wrapper functions for ProcessPoolExecutor
 # ---------------------------------------------------------------------------
-def _extract_regex_task(item: tuple[str, Path, str]) -> ExtractionResult | None:
-    """Wrapper for extract_predicates_from_text_regex that unpacks tuple args."""
-    from extract import extract_predicates_from_text_regex
+def _extract_predicate_task(
+    item: tuple[str, Path, str], method: str
+) -> ExtractionResult | None:
+    """Wrapper that unpacks tuple args and calls the appropriate extractor."""
+    from extract import PREDICATE_EXTRACTORS
 
     device_id, text_path, source = item
-    return extract_predicates_from_text_regex(device_id, text_path, source)
-
-
-def _extract_ollama_task(item: tuple[str, Path, str]) -> ExtractionResult | None:
-    """Wrapper for extract_predicates_from_text_ollama that unpacks tuple args."""
-    from extract import extract_predicates_from_text_ollama
-
-    device_id, text_path, source = item
-    return extract_predicates_from_text_ollama(device_id, text_path, source)
-
-
-# ---------------------------------------------------------------------------
-# Download & Identification Tasks
-# ---------------------------------------------------------------------------
-
-
-def download_device_json(url: str = FDA_JSON_URL) -> list[dict]:
-    response = requests.get(
-        url,
-        timeout=60,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38 11"
-        },
-    )
-    response.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
-        with zip_file.open("device-510k-0001-of-0001.json") as f:
-            data = json.load(f)
-    return data
-
-
-def is_old_device(device: dict) -> bool:
-    import datetime
-    from datetime import timezone
-
-    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=365)
-    device_date = datetime.datetime.strptime(
-        device["decision_date"], "%Y-%m-%d"
-    ).replace(tzinfo=timezone.utc)
-    return device_date <= threshold_date
-
-
-def is_recent_device(device: dict) -> bool:
-    import datetime
-    from datetime import timezone
-
-    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=30)
-    device_date = datetime.datetime.strptime(
-        device["decision_date"], "%Y-%m-%d"
-    ).replace(tzinfo=timezone.utc)
-    return device_date >= threshold_date
-
-
-def pdf_data() -> dict:
-    from lib import PDF_DATA_PATH
-
-    return json.load(open(PDF_DATA_PATH))
-
-
-def identify_new_devices(
-    fda_data: dict,
-) -> list[str]:
-    # Determine what devices to download
-    fda_device_ids = [d["k_number"] for d in fda_data["results"]]
-    device_ids_1yold = [d["k_number"] for d in fda_data["results"] if is_old_device(d)]
-    device_ids_recent = [
-        d["k_number"] for d in fda_data["results"] if is_recent_device(d)
-    ]
-    device_ids_with_no_summary = pdf_data()["no_summary"]
-    device_ids_with_local_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
-
-    to_download = (
-        set(fda_device_ids)
-        - set(device_ids_with_no_summary)
-        - set(device_ids_1yold)
-        - set(device_ids_with_local_pdfs)
-    ) | (set(device_ids_recent) - set(device_ids_with_local_pdfs))
-
-    print("Found", len(to_download), "devices to download")
-    return list(to_download)
-
-
-def new_fda_devices(device_json_url: str = FDA_JSON_URL) -> list[str]:
-    print("Downloading device registry...")
-    fda_data = download_device_json(device_json_url)
-    new_devices = identify_new_devices(fda_data)
-    print(f"Found {len(new_devices)} new devices to process")
-    return new_devices
+    return PREDICATE_EXTRACTORS[method].func(device_id, text_path, source)
 
 
 # ---------------------------------------------------------------------------
@@ -291,37 +149,7 @@ def new_fda_devices(device_json_url: str = FDA_JSON_URL) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def existing_predicates_aggregate() -> dict:
-    # Read these files and merge them into a single dict
-    base = pathlib.Path(__file__).parent.parent.parent / "data" / "gt"
-    filepaths = [
-        (base / "predicates_overrides.json", "human", "raw", "human_raw"),
-        (base / "predicates_claudecode.json", "claude_code", "raw", "claude_code_raw"),
-        (
-            base / "predicates_regex_ministral3_3b.json",
-            "regex",
-            "ministral3b",
-            "regex_ministral3b",
-        ),
-        (base / "predicates_regex_rawtext.json", "regex", "raw", "regex_pymupdf"),
-    ]
-    aggregated = {}
-    for filepath, method, source, type in filepaths[::-1]:
-        with open(filepath, "r") as f:
-            data = json.load(f)
-        for key, value in data.items():
-            aggregated[key] = {
-                "predicates": value["predicates"],
-                "method": method,
-                "source": source,
-                "type": type,
-            }
-    return aggregated
-
-    # read data/claude_code
-
-
-def textify_stages(device_ids, text_methods):
+def textify_stages(device_ids: list[str], text_methods: list[str]) -> list[StageResult]:
     if not text_methods:
         return [
             StageResult(
@@ -336,39 +164,51 @@ def textify_stages(device_ids, text_methods):
     workers = len(text_methods)
     with ThreadPoolExecutor(max_workers=workers) as stage_executor:
         future_srs = []
-        if "pymupdf" in text_methods:
-            textify_sr = stage_executor.submit(
-                run_stage,
-                stage_name="Extract Text (PyMuPDF)",
-                items=device_ids,
-                task_fn=extract_text,
-                executor=ProcessPoolExecutor(max_workers=4),
+        for method in text_methods:
+            if method not in TEXT_EXTRACTORS:
+                raise ValueError(f"Unknown text method: {method}")
+            config = TEXT_EXTRACTORS[method]
+            executor = (
+                ProcessPoolExecutor(max_workers=config.max_workers)
+                if config.executor_type == "process"
+                else ThreadPoolExecutor(max_workers=config.max_workers)
             )
-            future_srs.append(textify_sr)
-        if "tesseract" in text_methods:
-            tesseract_future = stage_executor.submit(
+            future = stage_executor.submit(
                 run_stage,
-                stage_name="Extract Text (Tesseract)",
+                stage_name=config.name,
                 items=device_ids,
-                task_fn=extract_text_tesseract,
-                executor=ProcessPoolExecutor(max_workers=4),
+                task_fn=config.func,
+                executor=executor,
             )
-            future_srs.append(tesseract_future)
-        if "ollama" in text_methods:
-            ollama_future = stage_executor.submit(
-                run_stage,
-                stage_name="Extract Text (Ollama)",
-                items=device_ids,
-                task_fn=lambda did: ocr_pdf(did, MINISTRAL3_3B_PATH / f"{did}.txt"),
-                executor=ThreadPoolExecutor(max_workers=1),
-            )
-            future_srs.append(ollama_future)
+            future_srs.append(future)
 
     textify_srs = []
     for future in as_completed(future_srs):
         textify_srs.append(future.result())
 
     return textify_srs
+
+
+def extract_predicates_stages(
+    work_items: list[tuple[str, Path, str]], predicate_methods: list[str]
+) -> list[ExtractionResult]:
+    extract_results = []
+    assert all(method in PREDICATE_EXTRACTORS for method in predicate_methods)
+    for method in predicate_methods:
+        config = PREDICATE_EXTRACTORS[method]
+        executor = (
+            ProcessPoolExecutor(max_workers=config.max_workers)
+            if config.executor_type == "process"
+            else ThreadPoolExecutor(max_workers=config.max_workers)
+        )
+        results = run_stage(
+            stage_name=config.name,
+            items=work_items,
+            task_fn=partial(_extract_predicate_task, method=method),
+            executor=executor,
+        )
+        extract_results.extend(results.succeeded)
+    return extract_results
 
 
 def fda_extraction_pipeline(
@@ -381,12 +221,8 @@ def fda_extraction_pipeline(
     job_path.mkdir(parents=True, exist_ok=True)
     for path in [RAWTEXT_PATH, TESSERACT_TEXT_PATH, MINISTRAL3_3B_PATH, PDF_PATH]:
         path.mkdir(parents=True, exist_ok=True)
-    assert all(
-        text_method in ["tesseract", "ollama", "pymupdf"]
-        for text_method in text_methods
-    )
 
-    # 1. Download PDFS for new devices
+    # 1. Download PDFs
     download_result = run_stage(
         stage_name="Download PDFs",
         items=device_ids,
@@ -414,62 +250,32 @@ def fda_extraction_pipeline(
                 raise ValueError(f"Unknown source: {result.filepath}")
             work_items.append((did, result.filepath, source))
 
-    # 3. Extract predicates. Regex is fast so no need to parallelize
-    extract_results = []
-    if "regex" in predicate_methods:
-        regex_results = run_stage(
-            stage_name="Extract Predicates (Regex)",
-            items=work_items,
-            task_fn=_extract_regex_task,
-            executor=ProcessPoolExecutor(),
-        )
-        extract_results.extend(regex_results.succeeded)
-    if "ollama" in predicate_methods:
-        ollama_results = run_stage(
-            stage_name="Extract Predicates (Ollama)",
-            items=work_items,
-            task_fn=_extract_ollama_task,
-            executor=ThreadPoolExecutor(max_workers=4),
-        )
-        extract_results.extend(ollama_results.succeeded)
+    # 3. Extract predicates
+    extract_results = extract_predicates_stages(work_items, predicate_methods)
 
     # 5. Agggregate local results
     sm_dict = defaultdict(list)
-    for _, result in extract_results:
+    extract_results = [x[1] for x in extract_results]
+    for result in extract_results:
         key = result.method + "_" + result.source
         sm_dict[key].append(result.model_dump())
     for key, results in sm_dict.items():
         with open(job_path / f"predicates_{key}.json", "w") as f:
             json.dump(results, f, indent=2)
 
-    #
-    aggregated_results = aggregate_predicates(extract_results)
+    # 5. Merge with existing predicates
+    existing_predicates = load_existing_predicates()
+    aggregated_results = aggregate_predicates(existing_predicates + extract_results)
     with open(job_path / "aggregated_predicates.json", "w") as f:
         json.dump(aggregated_results, f, indent=2)
 
-    # 5. Merge with existing predicates
-    existing_predicates = existing_predicates_aggregate()
-    for device_id, data in aggregated_results.items():
-        if device_id not in existing_predicates:
-            existing_predicates[device_id] = data
-        elif device_id in existing_predicates:
-            existing_priority = EXTRACTION_PRIORITY.get(
-                (
-                    existing_predicates[device_id]["method"],
-                    existing_predicates[device_id]["source"],
-                ),
-                99,
-            )
-            new_priority = EXTRACTION_PRIORITY.get((data["method"], data["source"]), 99)
-            if new_priority < existing_priority:
-                existing_predicates[device_id]["predicates"] = data["predicates"]
-
     with open(job_path / "final_predicates.json", "w") as f:
-        # sort by device_id
-        existing_predicates = dict(
-            sorted(existing_predicates.items(), key=lambda x: x[0])
+        aggregated_results = dict(
+            sorted(aggregated_results.items(), key=lambda x: x[0])
         )
-        json.dump(existing_predicates, f, indent=2)
+        json.dump(aggregated_results, f, indent=2)
+
+    build_all_graphs(aggregated_results, job_path)
 
 
 # ---------------------------------------------------------------------------

@@ -1,13 +1,10 @@
-import argparse
 import json
 import pathlib
 import re
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Annotated, Callable
 
 import requests
-import tqdm
-from pydantic import BaseModel, AfterValidator
-from typing import Annotated
+from pydantic import BaseModel, AfterValidator, SkipValidation
 
 from lib import (
     DATA_PATH,
@@ -74,8 +71,8 @@ def extract_predicates_from_text_ollama(
     payload = {
         "model": "ministral-3:3b",
         "prompt": f"""
-Identify the predicate device ids for these device submissions. Predicates are ONLY identified by device_ids like that look like K\d{6} or DEN\d{6}.
-Not all device submissions have predicates. If so, return an empty list. Only return the predicate device ids, and not any text describing the device itself..
+Identify the predicate device ids for these device submissions. Predicates are ONLY identified by device_ids like that look like K followed by 6 digits or DEN followed by 6 digits.
+Not all device submissions have predicates. If so, return an empty list. Only return the predicate device ids, and not any text describing the device itself.
 ```text
 {text}
 ```""",
@@ -156,3 +153,36 @@ def extract_predicates_from_text_regex(
             error=str(e),
             type=f"regex_{source}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+# Type alias for predicate extractor functions
+PredicateExtractorFunc = Callable[[str, pathlib.Path, str], ExtractionResult | None]
+
+
+class PredicateExtractorConfig(BaseModel):
+    """Configuration for a predicate extraction method."""
+
+    name: str
+    func: SkipValidation[PredicateExtractorFunc]
+    executor_type: str  # "process" or "thread"
+    max_workers: int
+
+
+PREDICATE_EXTRACTORS: dict[str, PredicateExtractorConfig] = {
+    "regex": PredicateExtractorConfig(
+        name="Extract Predicates (Regex)",
+        func=extract_predicates_from_text_regex,
+        executor_type="process",
+        max_workers=4,
+    ),
+    "ollama": PredicateExtractorConfig(
+        name="Extract Predicates (Ollama)",
+        func=extract_predicates_from_text_ollama,
+        executor_type="thread",
+        max_workers=4,
+    ),
+}

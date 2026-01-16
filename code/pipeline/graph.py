@@ -271,23 +271,18 @@ def export_cytoscape(graph: DeviceGraph, output_path: Path) -> None:
     print(f"  Size: {size_mb:.1f} MB")
 
 
-def main():
+def build_all_graphs(raw_predicates, job_dir: Path):
     from lib import (
-        CYTOSCAPE_PATH,
         FDA_JSON_PATH,
-        GRAPH_PATH,
     )
 
-    predicates_path = Path(sys.argv[1])
-    raw_predicates = json.load(open(predicates_path))
     predicates = {k: v["predicates"] for k, v in raw_predicates.items()}
-
     graph = build_graph(
         FDA_JSON_PATH,
         predicates,
     )
-    export_graph(graph, GRAPH_PATH)
-    export_cytoscape(graph, CYTOSCAPE_PATH)
+    export_graph(graph, job_dir / "graph.json")
+    export_cytoscape(graph, job_dir / "cytoscape.json")
 
 
 if __name__ == "__main__":

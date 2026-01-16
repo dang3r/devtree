@@ -22,6 +22,10 @@ MAX_CONCURRENT = 3
 TIMEOUT = 30.0
 SLEEP_TIME = 1.0
 
+FDA_JSON_URL = (
+    "https://download.open.fda.gov/device/510k/device-510k-0001-of-0001.json.zip"
+)
+
 
 class DownloadResult(BaseModel):
     """Result of a single PDF download."""
@@ -122,3 +126,77 @@ def download_pdf_sync(device_id: str, output_dir: Path) -> DownloadResult:
                 status="failed",
                 error=str(e),
             )
+
+
+def download_device_json(url: str = FDA_JSON_URL) -> list[dict]:
+    response = requests.get(
+        url,
+        timeout=60,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38 11"
+        },
+    )
+    response.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
+        with zip_file.open("device-510k-0001-of-0001.json") as f:
+            data = json.load(f)
+    return data
+
+
+def is_old_device(device: dict) -> bool:
+    import datetime
+    from datetime import timezone
+
+    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=365)
+    device_date = datetime.datetime.strptime(
+        device["decision_date"], "%Y-%m-%d"
+    ).replace(tzinfo=timezone.utc)
+    return device_date <= threshold_date
+
+
+def is_recent_device(device: dict) -> bool:
+    import datetime
+    from datetime import timezone
+
+    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=30)
+    device_date = datetime.datetime.strptime(
+        device["decision_date"], "%Y-%m-%d"
+    ).replace(tzinfo=timezone.utc)
+    return device_date >= threshold_date
+
+
+def pdf_data() -> dict:
+    from lib import PDF_DATA_PATH
+
+    return json.load(open(PDF_DATA_PATH))
+
+
+def identify_new_devices(
+    fda_data: dict,
+) -> list[str]:
+    # Determine what devices to download
+    fda_device_ids = [d["k_number"] for d in fda_data["results"]]
+    device_ids_1yold = [d["k_number"] for d in fda_data["results"] if is_old_device(d)]
+    device_ids_recent = [
+        d["k_number"] for d in fda_data["results"] if is_recent_device(d)
+    ]
+    device_ids_with_no_summary = pdf_data()["no_summary"]
+    device_ids_with_local_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
+
+    to_download = (
+        set(fda_device_ids)
+        - set(device_ids_with_no_summary)
+        - set(device_ids_1yold)
+        - set(device_ids_with_local_pdfs)
+    ) | (set(device_ids_recent) - set(device_ids_with_local_pdfs))
+
+    print("Found", len(to_download), "devices to download")
+    return list(to_download)
+
+
+def new_fda_devices(device_json_url: str = FDA_JSON_URL) -> list[str]:
+    print("Downloading device registry...")
+    fda_data = download_device_json(device_json_url)
+    new_devices = identify_new_devices(fda_data)
+    print(f"Found {len(new_devices)} new devices to process")
+    return new_devices
