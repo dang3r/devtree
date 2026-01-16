@@ -7,6 +7,7 @@ Creates a graph structure with nodes (devices) and edges (predicate relationship
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any
 
 import pandas as pd
@@ -275,11 +276,10 @@ def main():
         CYTOSCAPE_PATH,
         FDA_JSON_PATH,
         GRAPH_PATH,
-        get_predicates,
     )
 
-    raw_predicates = get_predicates()
-
+    predicates_path = Path(sys.argv[1])
+    raw_predicates = json.load(open(predicates_path))
     predicates = {k: v["predicates"] for k, v in raw_predicates.items()}
 
     graph = build_graph(

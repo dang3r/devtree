@@ -6,10 +6,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import requests
 import tqdm
-from pydantic import BaseModel
+from pydantic import BaseModel, AfterValidator
+from typing import Annotated
 
 from lib import (
     DATA_PATH,
+    PREDICATES_PATH,
 )
 
 # Case insensitive regex for K-numbers
@@ -19,12 +21,22 @@ MALFORMED_PATTERN = re.compile(
 )  # K with spaces in digits
 
 
+def validate_predicates(v: list[str]) -> list[str]:
+    for predicate in v:
+        if not re.match(r"(K|P|DEN)\d{6}", predicate):
+            raise ValueError(f"Invalid predicate: {predicate}")
+    return v
+
+
 class ExtractionResult(BaseModel):
     """Complete extraction result for a single device."""
 
     device_id: str
-    predicates: list[str]
+    predicates: Annotated[list[str], AfterValidator(validate_predicates)]
+    method: str  # "regex" or "ollama"
+    source: str  # "raw", "tesseract", or "ministral"
     error: str | None = None
+    type: str | None = None
 
 
 def extract_k_numbers(text: str) -> list[str]:
@@ -35,14 +47,38 @@ def extract_k_numbers(text: str) -> list[str]:
 
 
 def extract_predicates_from_text_ollama(
-    device_id: str, text_path: pathlib.Path
+    device_id: str,
+    text_path: pathlib.Path,
+    source: str = "raw",
+    model: str = "ministral-3:3b",
 ) -> ExtractionResult | None:
+    method = model
+    folder = pathlib.Path(PREDICATES_PATH) / model / source
+    folder.mkdir(parents=True, exist_ok=True)
+    output_path = folder / f"{device_id}.json"
+
+    if output_path.exists():
+        with open(output_path, "r") as f:
+            data = json.load(f)
+        return ExtractionResult(**data)
     if device_id.startswith("DEN") or not text_path.exists():
-        return None
+        return ExtractionResult(
+            device_id=device_id,
+            predicates=[],
+            method=method,
+            source=source,
+            error="Device ID starts with DEN or text file does not exist",
+            type=f"ollama_{model}_{source}",
+        )
     text = text_path.read_text()
     payload = {
         "model": "ministral-3:3b",
-        "prompt": f"Identify the predicate device ids for these device submissions. Predicates are ONLY identified by K123456 or DEN123456. Only return the predicate device ids, and not any references to other devices.\n\n```text\n{text}```",
+        "prompt": f"""
+Identify the predicate device ids for these device submissions. Predicates are ONLY identified by device_ids like that look like K\d{6} or DEN\d{6}.
+Not all device submissions have predicates. If so, return an empty list. Only return the predicate device ids, and not any text describing the device itself..
+```text
+{text}
+```""",
         "stream": False,
         "options": {"temperature": 0.0},
         "format": {
@@ -57,92 +93,66 @@ def extract_predicates_from_text_ollama(
             },
         },
     }
+    # take the stem of the text path parent folder
     try:
         response = requests.post(
             f"http://localhost:11434/api/generate", json=payload, timeout=120
         )
         data = json.loads(response.json()["response"])
-        print(data)
         response.raise_for_status()
-        print(
-            "Extracted predicates from text with Ollama",
-            device_id,
-            data.get("predicates", []),
-        )
-        return ExtractionResult(
+        extr = ExtractionResult(
             device_id=device_id,
             predicates=data.get("predicates", []),
+            method=method,
+            source=source,
+            type=f"ollama_{model}_{source}",
         )
+        with open(output_path, "w") as f:
+            json.dump(extr.model_dump(), f, indent=2)
+        return extr
     except Exception as e:
-        return ExtractionResult(device_id=device_id, predicates=[], error=str(e))
+        return ExtractionResult(
+            device_id=device_id,
+            predicates=[],
+            method=method,
+            source=source,
+            error=str(e),
+            type=f"ollama_{model}_{source}",
+        )
 
 
 def extract_predicates_from_text_regex(
-    device_id: str, text_path: pathlib.Path
+    device_id: str, text_path: pathlib.Path, source: str
 ) -> ExtractionResult | None:
     try:
         if device_id.startswith("DEN") or not text_path.exists():
-            return None
+            return ExtractionResult(
+                device_id=device_id,
+                predicates=[],
+                method="regex",
+                source=source,
+                error="Device ID starts with DEN or text file does not exist",
+                type=f"regex_{source}",
+            )
 
         text = text_path.read_text()
         predicates = extract_k_numbers(text)
         predicates = [k.upper() for k in predicates]
         predicates = [k for k in predicates if k != device_id]
 
-        print("Extracted predicates from text with Regex", device_id, predicates)
         return ExtractionResult(
             device_id=device_id,
             predicates=predicates,
+            method="regex",
+            source=source,
+            type=f"regex_{source}",
         )
     except Exception as e:
         return ExtractionResult(
             device_id=device_id,
             predicates=[],
+            method="regex",
+            source=source,
             error=str(e),
+            type=f"regex_{source}",
         )
-
-
-def extract_predicates_from_text(
-    device_ids: list[str],
-) -> list[ExtractionResult | None]:
-    with ProcessPoolExecutor() as executor:
-        futures = [
-            executor.submit(extract_predicates_from_text_single, device_id, text_path)
-            for device_id, text_path in device_ids
-        ]
-        return [
-            future.result()
-            for future in tqdm.tqdm(as_completed(futures), total=len(futures))
-        ]
-
-
-def main():
-    """
-    Extract predicates from text files using regex matching.
-
-    """
-    args = argparse.ArgumentParser()
-    args.add_argument("--text_folder", type=str, required=True)
-    args = args.parse_args()
-
-    folder = pathlib.Path(args.text_folder)
-    method = f"regex_{folder.stem}"
-    dst_path = DATA_PATH / f"predicates_{method}.json"
-
-    device_ids = [(p.stem, p) for p in folder.glob("*.txt")]
-    results = extract_predicates_from_text(device_ids)
-
-    did_to_predicates = {}
-    for result in results:
-        if result is None:
-            continue
-        did_to_predicates[result.device_id] = {}
-        did_to_predicates[result.device_id]["predicates"] = result.predicates
-        did_to_predicates[result.device_id]["method"] = method
-
-    with open(dst_path, "w") as f:
-        json.dump(did_to_predicates, f, indent=2)
-
-
-if __name__ == "__main__":
-    main()

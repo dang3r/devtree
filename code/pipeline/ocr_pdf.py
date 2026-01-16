@@ -12,6 +12,7 @@ from PIL import Image
 from pydantic import BaseModel
 from tqdm import tqdm
 
+from textify import TextifyResult
 from lib import PDF_PATH
 
 
@@ -60,7 +61,7 @@ def ocr_image_with_ollama(
 def ocr_pdf(
     device_id: str,
     output_path: Path,
-    model: str = "gemma3",
+    model: str = "ministral-3:3b",
     dpi: int = 100,
 ) -> OcrOllamaResult:
     """OCR all pages of a PDF with parallel processing."""
@@ -68,10 +69,10 @@ def ocr_pdf(
     method = f"ollama_{model}_{dpi}"
 
     if output_path.exists():
-        return OcrOllamaResult(
+        return TextifyResult(
             device_id=device_id,
-            output_path=output_path,
-            method=method,
+            filepath=output_path,
+            text_method=method,
         )
 
     try:
@@ -88,16 +89,16 @@ def ocr_pdf(
         output_path.write_text(all_text)
         doc.close()
         tqdm.write(f"OCRed {pdf_path.name} to {output_path}")
-        return OcrOllamaResult(
+        return TextifyResult(
             device_id=device_id,
-            output_path=output_path,
-            method=method,
+            filepath=output_path,
+            text_method=method,
         )
     except Exception as e:
-        return OcrOllamaResult(
+        return TextifyResult(
             device_id=device_id,
-            output_path=output_path,
-            method=method,
+            filepath=output_path,
+            text_method=method,
             error=str(e),
         )
 
