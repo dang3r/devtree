@@ -17,15 +17,19 @@ GRAPH_PATH = DATA_PATH / "graph.json"
 CYTOSCAPE_PATH = DATA_PATH / "cytoscape.json"
 PREDICATES_PATH = DATA_PATH / "predicates.json"
 
-RAWTEXT_PATH = TEXT_PATH / "raw_text"
+RAWTEXT_PATH = TEXT_PATH / "pymupdf"
 MINISTRAL3_3B_PATH = TEXT_PATH / "ministral3_3b"
 TESSERACT_TEXT_PATH = TEXT_PATH / "tesseract"
+
+PREDICATES_PATH = DATA_PATH.parent / "predicates"
 
 
 PREDICATES_OVERRIDES_PATH = DATA_PATH / "predicate_overrides.json"
 PREDICATES_RAWTEXT_PATH = DATA_PATH / "predicates_regex_rawtext.json"
 PREDICATES_CLAUDECODE_PATH = DATA_PATH / "predicates_claudecode.json"
 PREDICATES_MINISTRAL3_3B_PATH = DATA_PATH / "predicates_regex_ministral3_3b.json"
+
+PREDICATES_CLAUDECODE_PATH = PREDICATES_PATH / "claude_code"
 
 
 def get_predicates_rawtext(
