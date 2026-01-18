@@ -102,7 +102,7 @@ def run_stage(
         futures = {executor.submit(task_fn, item_id): item_id for item_id in to_process}
 
         for idx, future in enumerate(as_completed(futures)):
-            if idx % (len(futures) // 10) == 0:
+            if idx % max(1, len(futures) // 10) == 0:
                 print(
                     f"Stage {stage_name}: {idx} of {len(futures)}, speed={idx / (time.time() - start):.1f} items/s"
                 )
@@ -115,6 +115,8 @@ def run_stage(
                     succeeded.append((item_id, result))
             except Exception as e:
                 import traceback
+
+                print(traceback.format_exc())
 
                 failed.append((item_id, str(e)))
     finally:
@@ -238,17 +240,9 @@ def fda_extraction_pipeline(
     )
     work_items = []
     for sr in textify_srs:
-        results = sr.succeeded + sr.skipped
+        results = sr.succeeded
         for did, result in results:
-            if "pymupdf" in str(result.filepath):
-                source = "pymupdf"
-            elif "tesseract" in str(result.filepath):
-                source = "tesseract"
-            elif "ministral" in str(result.filepath):
-                source = "ministral"
-            else:
-                raise ValueError(f"Unknown source: {result.filepath}")
-            work_items.append((did, result.filepath, source))
+            work_items.append((did, result.filepath, result.type()))
 
     # 3. Extract predicates
     extract_results = extract_predicates_stages(work_items, predicate_methods)
@@ -275,27 +269,25 @@ def fda_extraction_pipeline(
         )
         json.dump(aggregated_results, f, indent=2)
 
+    # 6. Build the graphs
     build_all_graphs(aggregated_results, job_path)
 
-
-# ---------------------------------------------------------------------------
-# CLI Entry Point
-# ---------------------------------------------------------------------------
+    # gzip the cytoscape.json file
 
 
 if __name__ == "__main__":
     text_methods = ["tesseract", "ollama", "pymupdf"]
     predicate_methods = ["regex", "ollama"]
     args = argparse.ArgumentParser(description="Run the FDA extraction pipeline")
-    args.add_argument("command", type=str, choices=["new", "all", "extract"])
+    args.add_argument("command", type=str)
     args = args.parse_args()
 
     if args.command == "new":
         device_ids = new_fda_devices()
         fda_extraction_pipeline(
             device_ids=device_ids,
-            text_methods=text_methods,
-            predicate_methods=predicate_methods,
+            text_methods=["pymupdf", "tesseract"],
+            predicate_methods=["regex", "openrouter"],
         )
     elif args.command == "all":
         device_ids = [p.stem for p in PDF_PATH.glob("*.pdf")]
@@ -304,10 +296,18 @@ if __name__ == "__main__":
             text_methods=["pymupdf", "tesseract"],
             predicate_methods=["regex"],
         )
-    elif args.command == "extract":
+    elif args.command == "test":
         device_ids = random.sample([p.stem for p in PDF_PATH.glob("*.pdf")], 10)
         fda_extraction_pipeline(
             device_ids=device_ids,
             text_methods=["pymupdf", "tesseract", "ollama"],
             predicate_methods=["regex", "ollama"],
+        )
+    elif args.command == "openrouter":
+        device_ids = random.sample([p.stem for p in PDF_PATH.glob("*.pdf")], 10)
+        # device_ids = ["K203287", "K232891", "K202050", "K232891"]
+        fda_extraction_pipeline(
+            device_ids=device_ids,
+            text_methods=["pymupdf", "tesseract"],
+            predicate_methods=["regex", "openrouter"],
         )

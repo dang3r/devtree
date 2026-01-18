@@ -7,15 +7,20 @@ URL pattern: https://www.accessdata.fda.gov/cdrh_docs/pdf{YY}/{K_NUMBER}.pdf
 
 import asyncio
 from datetime import datetime, timezone, timedelta
+import io
 import json
 from pathlib import Path
 import re
 from typing import Literal
+import zipfile
+import datetime
+from datetime import timezone
 
 import httpx
 from pydantic import BaseModel
+import requests
 
-from lib import FDA_JSON_PATH, PDF_DATA_PATH
+from lib import PDF_DATA_PATH
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38"}
 MAX_CONCURRENT = 3
@@ -144,8 +149,6 @@ def download_device_json(url: str = FDA_JSON_URL) -> list[dict]:
 
 
 def is_old_device(device: dict) -> bool:
-    import datetime
-    from datetime import timezone
 
     threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=365)
     device_date = datetime.datetime.strptime(
@@ -155,9 +158,6 @@ def is_old_device(device: dict) -> bool:
 
 
 def is_recent_device(device: dict) -> bool:
-    import datetime
-    from datetime import timezone
-
     threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=30)
     device_date = datetime.datetime.strptime(
         device["decision_date"], "%Y-%m-%d"
@@ -166,8 +166,6 @@ def is_recent_device(device: dict) -> bool:
 
 
 def pdf_data() -> dict:
-    from lib import PDF_DATA_PATH
-
     return json.load(open(PDF_DATA_PATH))
 
 

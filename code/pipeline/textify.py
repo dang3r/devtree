@@ -28,6 +28,17 @@ class TextifyResult(BaseModel):
     error: str | None = None
     filepath: Path | None = None
 
+    # make a type attribute function
+    def type(self) -> str:
+        if "pymupdf" in self.text_method:
+            return "pymupdf"
+        elif "tesseract" in self.text_method:
+            return "tesseract"
+        elif "ministral" in self.text_method:
+            return "ministral"
+        else:
+            raise ValueError(f"Unknown text method: {self.text_method}")
+
 
 # ---------------------------------------------------------------------------
 # PyMuPDF Text Extraction
@@ -54,6 +65,7 @@ def extract_text_pymupdf(device_id: str) -> TextifyResult:
                 device_id=device_id,
                 error="PDF file missing",
                 text_method="pymupdf",
+                type="pymupdf",
             )
 
         dst_path = RAWTEXT_PATH / f"{device_id}.txt"
@@ -62,6 +74,7 @@ def extract_text_pymupdf(device_id: str) -> TextifyResult:
                 device_id=device_id,
                 text_method="pymupdf",
                 filepath=dst_path,
+                type="pymupdf",
             )
 
         text, pdf_pages = extract_text_from_pdf(pdf_path)

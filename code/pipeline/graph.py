@@ -4,6 +4,7 @@ Build device graph from FDA data and predicates.
 Creates a graph structure with nodes (devices) and edges (predicate relationships).
 """
 
+import gzip
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,9 +26,12 @@ class DeviceNode(BaseModel):
     product_code: str | None = None
     specialty: str | None = None
     date_received: str | None = None
-    # decision_description: str | None = None
+    decision_description: str | None = None
+    clearance_type: str | None = None
     country_code: str | None = None
     state: str | None = None
+    regulation_number: str | None = None
+    advisory_committee: str | None = None
 
 
 class Edge(BaseModel):
@@ -149,14 +153,14 @@ def extract_device_node(
         decision_date=device.get("decision_date"),
         device_class=openfda.get("device_class"),
         product_code=device.get("product_code"),
-        # advisory_committee=device.get("advisory_committee"),
+        advisory_committee=device.get("advisory_committee"),
         specialty=device.get("advisory_committee_description"),
         date_received=device.get("date_received"),
-        # decision_description=device.get("decision_description"),
-        # clearance_type=device.get("clearance_type"),
+        decision_description=device.get("decision_description"),
+        clearance_type=device.get("clearance_type"),
         country_code=device.get("country_code"),
         state=device.get("state"),
-        # regulation_number=openfda.get("regulation_number"),
+        regulation_number=openfda.get("regulation_number"),
     )
 
 
@@ -284,6 +288,12 @@ def build_all_graphs(raw_predicates, job_dir: Path):
     export_graph(graph, job_dir / "graph.json")
     export_cytoscape(graph, job_dir / "cytoscape.json")
 
-
-if __name__ == "__main__":
-    main()
+    # gzip the cytoscape.json file
+    with open(job_dir / "cytoscape.json", "rb") as f:
+        with gzip.open(job_dir / "cytoscape.json.gz", "wb") as g:
+            g.write(f.read())
+    # add size to the print
+    size_mb = (job_dir / "cytoscape.json.gz").stat().st_size / (1024 * 1024)
+    print(
+        f"  Gzipped cytoscape.json to {job_dir / 'cytoscape.json.gz'} ({size_mb:.1f} MB)"
+    )

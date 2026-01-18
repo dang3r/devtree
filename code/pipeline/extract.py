@@ -17,6 +17,56 @@ MALFORMED_PATTERN = re.compile(
     r"k\s*\d[\s\d]{5,8}", re.IGNORECASE
 )  # K with spaces in digits
 
+OPENROUTER_EXTRACTION_PROMPT = """
+### INSTRUCTIONS
+Analyze the device summary text below.
+1. Extract the device ids that are predicates and stuff them into the "predicates" array.
+2. Device ids can be in the text as "K" followed by 6 digits or "DEN" followed by 6 digits.
+3. Do not include the device name in the "predicates" array.
+4. Do not include the summary's device id itself in the "predicates" array.
+
+Output valid JSON matching this schema:
+
+{{ 
+	"predicates": ["string", "string", "string", ...], 
+}}
+
+### EXAMPLES
+Input: "The XrayCool Machine (K172712) has a predicate device is K000001. and the referenced device is K000002."
+
+Output: 
+{{ 
+	"predicates": ["K000001"], 
+}}
+
+Input: 
+"The device's predicate is the Acme Inc CYberXray Machine (K139101)
+
+Output: 
+{{ 
+	"predicates": ["K139101"], 
+}}
+
+Input: 
+"The device's predicates are the Autonomous AI Viz (K91828) and the CYberAcme AI Analyzer (K139101).
+
+Output: 
+{{ 
+	"predicates": ["K91828", "K139101"], 
+}}
+
+### DATA
+
+This is the summary for device {device_id}.
+
+```text
+{summary_text}
+```
+
+### RESPONSE
+JSON Output:
+"""
+
 
 def validate_predicates(v: list[str]) -> list[str]:
     for predicate in v:
@@ -155,6 +205,77 @@ def extract_predicates_from_text_regex(
         )
 
 
+def clean_text(text):
+    # Remove Markdown fences
+    text = text.replace("```json", "").replace("```", "")
+
+    # Extract only the JSON object
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1:
+        return text[start : end + 1]
+    return text
+
+
+def extract_predicates_using_openrouter(
+    device_id: str,
+    text_path: pathlib.Path,
+    source: str,
+    model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
+) -> ExtractionResult | None:
+    import requests
+    import json
+    import os
+
+    # First API call with reasoning
+    response = requests.post(
+        url="https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps(
+            {
+                "model": "nvidia/nemotron-3-nano-30b-a3b:free",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": """ You are a regulatory affairs extraction engine. You output only valid JSON. You do not output conversational text.""",
+                    },
+                    {
+                        "role": "user",
+                        "content": OPENROUTER_EXTRACTION_PROMPT.format(
+                            device_id=device_id, summary_text=text_path.read_text()
+                        ),
+                    },
+                ],
+                "reasoning": {"enabled": True},
+            }
+        ),
+        timeout=120,
+    )
+
+    # Extract the assistant message with reasoning_details
+    response = response.json()
+    response = response["choices"][0]["message"]
+
+    print(response["content"])
+    text = clean_text(response["content"])
+    data = json.loads(text)
+    print(data)
+    return ExtractionResult(
+        device_id=device_id,
+        predicates=data.get("predicates", []),
+        method="openrouter",
+        source=source,
+        type=f"openrouter_{source}",
+    )
+
+
+# using new models via openrouter
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -182,6 +303,12 @@ PREDICATE_EXTRACTORS: dict[str, PredicateExtractorConfig] = {
     "ollama": PredicateExtractorConfig(
         name="Extract Predicates (Ollama)",
         func=extract_predicates_from_text_ollama,
+        executor_type="thread",
+        max_workers=4,
+    ),
+    "openrouter": PredicateExtractorConfig(
+        name="Extract Predicates (OpenRouter)",
+        func=extract_predicates_using_openrouter,
         executor_type="thread",
         max_workers=4,
     ),
