@@ -7,20 +7,29 @@ URL pattern: https://www.accessdata.fda.gov/cdrh_docs/pdf{YY}/{K_NUMBER}.pdf
 
 import asyncio
 from datetime import datetime, timezone, timedelta
+import io
 import json
 from pathlib import Path
 import re
 from typing import Literal
+import zipfile
+import datetime
+from datetime import timezone
 
 import httpx
 from pydantic import BaseModel
+import requests
 
-from lib import FDA_JSON_PATH, PDF_DATA_PATH
+from lib import PDF_DATA_PATH
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38"}
 MAX_CONCURRENT = 3
 TIMEOUT = 30.0
 SLEEP_TIME = 1.0
+
+FDA_JSON_URL = (
+    "https://download.open.fda.gov/device/510k/device-510k-0001-of-0001.json.zip"
+)
 
 
 class DownloadResult(BaseModel):
@@ -60,164 +69,116 @@ def build_pdf_url(device_id: str) -> str:
     return f"https://www.accessdata.fda.gov/cdrh_docs/pdf{year_prefix}/{device_id}.pdf"
 
 
-async def _download_pdf(
-    client: httpx.AsyncClient, url: str, output_path: Path, device_id: str
-) -> DownloadResult:
-    try:
-        headers = {**HEADERS}
-        headers["User-Agent"] = headers["User-Agent"] + device_id
-        response = await client.get(url, follow_redirects=True, headers=headers)
-        response.raise_for_status()
-        output_path.write_bytes(response.content)
+def download_pdf_sync(device_id: str, output_dir: Path) -> DownloadResult:
+    """Synchronous download of a single PDF. For use with ThreadPoolExecutor."""
+    import time
+
+    output_path = output_dir / f"{device_id}.pdf"
+
+    if output_path.exists():
         return DownloadResult(
             device_id=device_id,
             status="success",
             file_path=str(output_path),
-            file_size=len(response.content),
-        )
-    except httpx.HTTPStatusError as e:
-        # if 404, return not_found
-        if e.response.status_code == 404:
-            return DownloadResult(
-                device_id=device_id,
-                status="not_found",
-                error=f"HTTP {e.response.status_code}",
-            )
-        return DownloadResult(
-            device_id=device_id,
-            status="failed",
-            error=f"HTTP {e.response.status_code}",
-        )
-    except httpx.RequestError as e:
-        return DownloadResult(
-            device_id=device_id,
-            status="failed",
-            error=str(e),
-        )
-
-
-async def download_single_pdf(
-    client: httpx.AsyncClient,
-    device_id: str,
-    output_dir: Path,
-    semaphore: asyncio.Semaphore,
-) -> DownloadResult:
-    print(f"Downloading {device_id}...")
-    output_path = output_dir / f"{device_id}.pdf"
-
-    if output_path.exists():
-        print(f"Skipping {device_id} because it already exists")
-        return DownloadResult(
-            device_id=device_id,
-            status="skipped",
-            file_path=str(output_path),
             file_size=output_path.stat().st_size,
         )
 
-    # NOTE: The FDA db URL has a link to the summary and can be used to find the PDF URL.
-    # This will always cause us to to do at least two requests.
-    # Instead, try expected url and then review url. For most devices, only 1 request is needed.
     good_url = build_pdf_url(device_id)
     fb_url = f"https://www.accessdata.fda.gov/cdrh_docs/reviews/{device_id}.pdf"
 
-    async with semaphore:
-        good_res = await _download_pdf(client, good_url, output_path, device_id)
-        await asyncio.sleep(SLEEP_TIME)
-        if good_res.status == "success":
-            print(f"Downloaded {device_id} from good URL")
-            return good_res
-        fb_res = await _download_pdf(client, fb_url, output_path, device_id)
-        await asyncio.sleep(SLEEP_TIME)
-        if fb_res.status == "success":
-            print(f"Downloaded {device_id} from FB URL")
-            return fb_res
+    with httpx.Client(headers=HEADERS, timeout=TIMEOUT) as client:
+        # Try primary URL
+        try:
+            headers = {**HEADERS, "User-Agent": HEADERS["User-Agent"] + device_id}
+            response = client.get(good_url, follow_redirects=True, headers=headers)
+            response.raise_for_status()
+            output_path.write_bytes(response.content)
+            return DownloadResult(
+                device_id=device_id,
+                status="success",
+                file_path=str(output_path),
+                file_size=len(response.content),
+            )
+        except httpx.HTTPStatusError:
+            time.sleep(SLEEP_TIME)
 
-        print(f"Failed to download {device_id}", good_res)
-        return good_res
-
-
-async def download_pdfs_async(
-    device_ids: list[str],
-    output_dir: Path,
-    max_concurrent: int = MAX_CONCURRENT,
-) -> DownloadSummary:
-    """Download PDFs for all specified K-numbers."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    print(f"Downloading {len(device_ids)} PDFs (max {max_concurrent} concurrent)...")
-    async with httpx.AsyncClient(headers=HEADERS, timeout=TIMEOUT) as client:
-        results = []
-        tasks = [
-            download_single_pdf(client, k_num, output_dir, semaphore)
-            for k_num in device_ids
-        ]
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            results.append(result)
-        return DownloadSummary(
-            total=len(device_ids),
-            success=sum(1 for r in results if r.status == "success"),
-            failed=sum(1 for r in results if r.status == "failed"),
-            skipped=sum(1 for r in results if r.status == "skipped"),
-            results=results,
-        )
-
-
-def download_pdfs(
-    k_numbers: list[str],
-    output_dir: Path,
-    max_concurrent: int = MAX_CONCURRENT,
-) -> DownloadSummary:
-    """Synchronous wrapper for PDF downloads."""
-    return asyncio.run(download_pdfs_async(k_numbers, output_dir, max_concurrent))
+        # Try fallback URL
+        try:
+            response = client.get(fb_url, follow_redirects=True, headers=headers)
+            response.raise_for_status()
+            output_path.write_bytes(response.content)
+            return DownloadResult(
+                device_id=device_id,
+                status="success",
+                file_path=str(output_path),
+                file_size=len(response.content),
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return DownloadResult(
+                    device_id=device_id,
+                    status="not_found",
+                    error=f"HTTP 404",
+                )
+            return DownloadResult(
+                device_id=device_id,
+                status="failed",
+                error=f"HTTP {e.response.status_code}",
+            )
+        except httpx.RequestError as e:
+            return DownloadResult(
+                device_id=device_id,
+                status="failed",
+                error=str(e),
+            )
 
 
-def device_ids_without_pdfs(pdf_path: Path, fda_json_path: Path) -> list[str]:
-    """Get device IDs without PDFs."""
-    with open(fda_json_path) as f:
-        fda_data = json.load(f)
+def download_device_json(url: str = FDA_JSON_URL) -> list[dict]:
+    response = requests.get(
+        url,
+        timeout=60,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.38 11"
+        },
+    )
+    response.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
+        with zip_file.open("device-510k-0001-of-0001.json") as f:
+            data = json.load(f)
+    return data
 
-    device_ids = [d["k_number"] for d in fda_data["results"]]
-    return [d for d in device_ids if not (pdf_path / f"{d}.pdf").exists()]
+
+def is_old_device(device: dict) -> bool:
+
+    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=365)
+    device_date = datetime.datetime.strptime(
+        device["decision_date"], "%Y-%m-%d"
+    ).replace(tzinfo=timezone.utc)
+    return device_date <= threshold_date
 
 
-def main():
-    """Script for downloading PDFs for medical devices.
+def is_recent_device(device: dict) -> bool:
+    threshold_date = datetime.datetime.now(timezone.utc) - timedelta(days=30)
+    device_date = datetime.datetime.strptime(
+        device["decision_date"], "%Y-%m-%d"
+    ).replace(tzinfo=timezone.utc)
+    return device_date >= threshold_date
 
-    Identify devices without local PDFs and download them. Only download devices
-    that we no do not have a summary (be a good citizen and don't overwhelm the FDA).
-    """
 
-    fda_data = json.load(open(FDA_JSON_PATH))
+def pdf_data() -> dict:
+    return json.load(open(PDF_DATA_PATH))
+
+
+def identify_new_devices(
+    fda_data: dict,
+) -> list[str]:
+    # Determine what devices to download
     fda_device_ids = [d["k_number"] for d in fda_data["results"]]
-
-    # Devices approved before this date are considered old. Do not retrieve their PDFS
-    threshold_date = datetime.now(timezone.utc) - timedelta(days=365)
-    device_ids_1yold = [
-        d["k_number"]
-        for d in fda_data["results"]
-        if datetime.strptime(d["decision_date"], "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
-        <= threshold_date
+    device_ids_1yold = [d["k_number"] for d in fda_data["results"] if is_old_device(d)]
+    device_ids_recent = [
+        d["k_number"] for d in fda_data["results"] if is_recent_device(d)
     ]
-
-    # Sometimes summaries are not available immediately. Wait for 30 days after approval before stopping
-    one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
-    recent_device_ids = [
-        d["k_number"]
-        for d in fda_data["results"]
-        if datetime.strptime(d["decision_date"], "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
-        >= one_month_ago
-    ]
-
-    # Do not download PDFS for devices we know have no summaries
-    pdf_data = json.load(open(PDF_DATA_PATH))
-    device_ids_with_no_summary = pdf_data["no_summary"]
-
+    device_ids_with_no_summary = pdf_data()["no_summary"]
     device_ids_with_local_pdfs = [p.stem for p in Path("pdfs").glob("*.pdf")]
 
     to_download = (
@@ -225,27 +186,15 @@ def main():
         - set(device_ids_with_no_summary)
         - set(device_ids_1yold)
         - set(device_ids_with_local_pdfs)
-    ) | (set(recent_device_ids) - set(device_ids_with_local_pdfs))
+    ) | (set(device_ids_recent) - set(device_ids_with_local_pdfs))
 
     print("Found", len(to_download), "devices to download")
-
-    print("Attempting download of", len(to_download), "devices")
-    input("Press Enter to continue...")
-
-    summary = download_pdfs(
-        [did for did in to_download],
-        Path(__file__).parent.parent.parent / "pdfs",
-    )
-
-    # Save results
-    for result in summary.results:
-        if result.status == "not_found" and result.device_id not in recent_device_ids:
-            pdf_data["no_summary"].append(result.device_id)
-
-    with open(PDF_DATA_PATH, "w") as f:
-        pdf_data["no_summary"].sort()
-        json.dump(pdf_data, f, indent=2, default=str)
+    return list(to_download)
 
 
-if __name__ == "__main__":
-    main()
+def new_fda_devices(device_json_url: str = FDA_JSON_URL) -> list[str]:
+    print("Downloading device registry...")
+    fda_data = download_device_json(device_json_url)
+    new_devices = identify_new_devices(fda_data)
+    print(f"Found {len(new_devices)} new devices to process")
+    return new_devices

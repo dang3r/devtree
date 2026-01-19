@@ -8,6 +8,7 @@ dependencies = [
     "httpx",
     "pandas",
     "pillow",
+    "prefect>=3.6.10",
     "pydantic",
     "pymupdf>=1.26.7",
     "pytesseract",
