@@ -222,7 +222,7 @@ def extract_predicates_using_openrouter(
     device_id: str,
     text_path: pathlib.Path,
     source: str,
-    model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
+    model: str = "nvidia/nemotron-3-nano-30b-a3b",
 ) -> ExtractionResult | None:
     import requests
     import json
@@ -256,7 +256,6 @@ def extract_predicates_using_openrouter(
         timeout=120,
     )
 
-    # Extract the assistant message with reasoning_details
     response = response.json()
     response = response["choices"][0]["message"]
 

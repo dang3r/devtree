@@ -272,7 +272,21 @@ def fda_extraction_pipeline(
     # 6. Build the graphs
     build_all_graphs(aggregated_results, job_path)
 
-    # gzip the cytoscape.json file
+    # Compare new aggregated results with existing predicates.
+    existing_list = load_existing_predicates()
+    existing_dict = {e.device_id: e for e in existing_list}
+    predicate_diff = {}
+    for device_id, device_data in aggregated_results.items():
+        new_preds = set(device_data["predicates"])
+        if device_id in existing_dict:
+            old_preds = set(existing_dict[device_id].predicates)
+            if old_preds != new_preds:
+                predicate_diff[device_id] = {
+                    "old": existing_dict[device_id].model_dump(),
+                    "new": device_data,
+                }
+    with open(job_path / "predicate_diff.json", "w") as f:
+        json.dump(predicate_diff, f, indent=2)
 
 
 if __name__ == "__main__":
