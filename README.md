@@ -1,6 +1,6 @@
 # devtree
 
-![Devtree](docs/devtree.png)
+![Devtree](frontend/public/devtree.png)
 
 ## Overview
 
