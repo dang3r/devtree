@@ -62,6 +62,33 @@ for file in data/predicates_*.json; do
 done
 ```
 
+## Weekly Automation (GitHub Actions)
+
+The repo includes a weekly GitHub Action that runs the pipeline and publishes updates:
+- Pulls `data/gt/predicates.json` from `devtree-private`
+- Runs `uv run code/pipeline/pipeline.py new`
+- Uploads updated predicates back to `devtree-private`
+- Uploads the latest `cytoscape_graph.json.gz` to the public `devtree` bucket
+
+Required GitHub Actions secrets:
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ENDPOINT`
+- `OPENROUTER_API_KEY`
+
+Manual run (local):
+```bash
+scripts/weekly_sync.sh
+```
+
+Dry run:
+```bash
+scripts/weekly_sync.sh --dry-run
+```
+
+The frontend reads the public graph file from:
+`https://data.devtree.ca/cytoscape_graph.json.gz`
+
 
 ## Running the Frontend (Development)
 
@@ -94,4 +121,3 @@ npx serve out -p 3001
 ```
 
 The static site will be available at http://localhost:3001
-

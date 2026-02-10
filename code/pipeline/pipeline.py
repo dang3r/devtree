@@ -39,6 +39,8 @@ from textify import TEXT_EXTRACTORS
 from graph import build_all_graphs
 import argparse
 
+BEAM_AVAILABLE = False
+
 
 T = TypeVar("T")
 
@@ -289,6 +291,110 @@ def fda_extraction_pipeline(
         json.dump(predicate_diff, f, indent=2)
 
 
+def fda_extraction_pipeline_beam(
+    pdf_dir: Path = PDF_PATH,
+    text_methods: list[str] = None,
+    predicate_methods: list[str] = None,
+    device_ids: list[str] = None,
+    num_workers: int = 4,
+    runner: str = "DirectRunner",
+) -> dict[str, dict]:
+    """
+    Run FDA extraction pipeline using Apache Beam.
+
+    This provides an alternative execution model that can scale to distributed
+    systems (Dataflow, Flink, Spark) using the same code.
+
+    Args:
+        pdf_dir: Directory to store downloaded PDFs
+        text_methods: List of text extraction methods (pymupdf, tesseract, ollama)
+        predicate_methods: List of predicate extraction methods (regex, ollama, openrouter)
+        device_ids: List of device IDs to process
+        num_workers: Number of parallel workers (DirectRunner only)
+        runner: Beam runner to use (DirectRunner, DataflowRunner, etc.)
+
+    Returns:
+        Dictionary mapping device_id -> aggregated predicate result
+    """
+    if not BEAM_AVAILABLE:
+        raise RuntimeError(
+            "Apache Beam not available. Install with: uv add apache-beam\n"
+            "Note: Requires Python 3.12/3.13 due to pyarrow compatibility."
+        )
+
+    text_methods = text_methods or ["pymupdf", "tesseract"]
+    predicate_methods = predicate_methods or ["regex"]
+    device_ids = device_ids or []
+
+    job_path = pathlib.Path("jobs") / f"beam_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    job_path.mkdir(parents=True, exist_ok=True)
+
+    for path in [RAWTEXT_PATH, TESSERACT_TEXT_PATH, MINISTRAL3_3B_PATH, PDF_PATH]:
+        path.mkdir(parents=True, exist_ok=True)
+
+    # Configure Beam pipeline options
+    options = PipelineOptions([
+        f"--runner={runner}",
+        f"--direct_num_workers={num_workers}",
+    ])
+
+    aggregated_results = {}
+
+    with beam.Pipeline(options=options) as p:
+        # Create initial PCollection and run pipeline
+        results = (
+            p
+            | "CreateDevices" >> beam.Create(device_ids)
+            | "RunPipeline" >> FDAExtractionPipeline(
+                pdf_dir=pdf_dir,
+                text_methods=text_methods,
+                predicate_methods=predicate_methods,
+            )
+        )
+
+        # Collect results (note: this is only efficient for small outputs)
+        # For large outputs, use beam.io.WriteToText or similar
+        def collect_results(element):
+            device_id, data = element
+            aggregated_results[device_id] = data
+            return element
+
+        results | "CollectResults" >> beam.Map(collect_results)
+
+    # Merge with existing predicates
+    existing_predicates = load_existing_predicates()
+    new_results = [
+        ExtractionResult(
+            device_id=k,
+            predicates=v["predicates"],
+            method=v["method"],
+            source=v["source"],
+            type=v["type"],
+        )
+        for k, v in aggregated_results.items()
+    ]
+    final_results = aggregate_predicates(existing_predicates + new_results)
+
+    # Save outputs
+    with open(job_path / "aggregated_predicates.json", "w") as f:
+        json.dump(final_results, f, indent=2)
+
+    with open(job_path / "final_predicates.json", "w") as f:
+        final_results = dict(sorted(final_results.items(), key=lambda x: x[0]))
+        json.dump(final_results, f, indent=2)
+
+    # Build graphs
+    build_all_graphs(final_results, job_path)
+
+    print(f"\n{'='*50}")
+    print(f"Beam Pipeline Complete")
+    print(f"  Devices processed: {len(aggregated_results)}")
+    print(f"  Output dir: {job_path}")
+    print(f"{'='*50}\n")
+
+    return final_results
+
+
 if __name__ == "__main__":
     text_methods = ["tesseract", "ollama", "pymupdf"]
     predicate_methods = ["regex", "ollama"]
@@ -324,4 +430,22 @@ if __name__ == "__main__":
             device_ids=device_ids,
             text_methods=["pymupdf", "tesseract"],
             predicate_methods=["regex", "openrouter"],
+        )
+    elif args.command == "beam":
+        # Run using Apache Beam (requires Python 3.12/3.13)
+        device_ids = random.sample([p.stem for p in PDF_PATH.glob("*.pdf")], 10)
+        fda_extraction_pipeline_beam(
+            device_ids=device_ids,
+            text_methods=["pymupdf", "tesseract"],
+            predicate_methods=["regex"],
+            num_workers=4,
+        )
+    elif args.command == "beam-new":
+        # Run new devices using Apache Beam
+        device_ids = new_fda_devices()
+        fda_extraction_pipeline_beam(
+            device_ids=device_ids,
+            text_methods=["pymupdf", "tesseract"],
+            predicate_methods=["regex", "openrouter"],
+            num_workers=4,
         )
