@@ -9,7 +9,9 @@ import Contact from "@/components/Contact";
 import type { CytoscapeGraphData } from "@/types/device";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-const dataUrl = process.env.NEXT_PUBLIC_DATA_URL || `${basePath}/cytoscape_graph.json`;
+const dataUrl =
+  process.env.NEXT_PUBLIC_DATA_URL ||
+  "https://data.devtree.ca/cytoscape_graph.json.gz";
 
 // Map URL paths to tabs
 const pathToTab: Record<string, Tab> = {
