@@ -44,6 +44,8 @@ if [[ "${DRY_RUN}" == "false" ]]; then
     echo "Missing data/gt/predicates.json after download."
     exit 1
   fi
+  # sync pdf.json from remote
+  rclone copyto r2:devtree-private/pdf.json data/pdf.json || true
 else
   echo "Dry run: skipping predicates download"
 fi
